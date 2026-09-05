@@ -1,3 +1,11 @@
 .go-sdk/
+/.node-sdk/
+/.go-work/
+/.go-cache/
+/.npm-cache/
+/.webkit-sdk/
 /go
+/node
+/npm
+/wails
 /install_files/
