@@ -19,6 +19,43 @@ OS="$(uname -s)"
 ARCH="$(uname -m)"
 echo -e "${CYAN}OS détecté :${NC} $OS ($ARCH)"
 
+PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+LOCAL_OK=1
+
+check_local_file() {
+    local label=$1 path=$2
+    if [ -e "$PROJECT_ROOT/$path" ]; then
+        echo -e "  [✔] $label : ${GREEN}présent${NC} ($path)"
+    else
+        echo -e "  [✘] $label : ${RED}absent${NC} ($path)"
+        LOCAL_OK=0
+    fi
+}
+
+echo -e "\n${BOLD}[Local] Fichiers du projet${NC}"
+check_local_file 'Go' '.go-sdk/go/bin/go'
+check_local_file 'Node.js' '.node-sdk/bin/node'
+check_local_file 'npm' '.node-sdk/lib/node_modules/npm/bin/npm-cli.js'
+check_local_file 'Wails CLI' '.go-work/bin/wails'
+if [ "$OS" = "Linux" ]; then
+    check_local_file 'Header GTK3' '.webkit-sdk/usr/include/gtk-3.0/gtk/gtk.h'
+    check_local_file 'Header WebKitGTK' '.webkit-sdk/usr/include/webkitgtk-4.1/webkit2/webkit2.h'
+    if [ -f "$PROJECT_ROOT/.webkit-sdk/usr/lib64/pkgconfig/gtk+-3.0.pc" ] ||
+       [ -f "$PROJECT_ROOT/.webkit-sdk/usr/lib/x86_64-linux-gnu/pkgconfig/gtk+-3.0.pc" ]; then
+        echo -e "  [✔] Fichier pkg-config GTK3 : ${GREEN}présent${NC}"
+    else
+        echo -e "  [✘] Fichier pkg-config GTK3 : ${RED}absent${NC}"
+        LOCAL_OK=0
+    fi
+    if [ -f "$PROJECT_ROOT/.webkit-sdk/usr/lib64/pkgconfig/webkit2gtk-4.1.pc" ] ||
+       [ -f "$PROJECT_ROOT/.webkit-sdk/usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc" ]; then
+        echo -e "  [✔] Fichier pkg-config WebKitGTK : ${GREEN}présent${NC}"
+    else
+        echo -e "  [✘] Fichier pkg-config WebKitGTK : ${RED}absent${NC}"
+        LOCAL_OK=0
+    fi
+fi
+
 FYNE_OK=1
 WAILS_OK=1
 
@@ -233,6 +270,12 @@ fi
 echo -e "\n${BLUE}${BOLD}======================================================${NC}"
 echo -e "${BLUE}${BOLD}                   VERDICT TECHNIQUE                  ${NC}"
 echo -e "${BLUE}${BOLD}======================================================${NC}"
+
+if [ "$LOCAL_OK" -eq 1 ]; then
+    echo -e "  ${GREEN}${BOLD}✔ FICHIERS LOCAUX : PRÉSENTS${NC}"
+else
+    echo -e "  ${RED}${BOLD}✘ FICHIERS LOCAUX : MANQUANTS${NC}"
+fi
 
 if [ $FYNE_OK -eq 1 ]; then
     echo -e "  ${GREEN}${BOLD}✔ FYNE : COMPATIBLE SUR CETTE MACHINE${NC}"

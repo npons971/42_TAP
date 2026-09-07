@@ -10,27 +10,46 @@ cache="$repo/install_files/webkit"
 
 mkdir -p "$sdk" "$cache"
 
+# Utilise les archives déjà présentes dans le projet avant de solliciter le réseau.
+has_archive() {
+  local pattern=$1 package
+  for package in "$cache"/$pattern; do
+    [[ -s "$package" ]] && return 0
+  done
+  return 1
+}
+
 case " ${ID:-} ${ID_LIKE:-} " in
   *" fedora "*|*" rhel "*)
-    command -v dnf >/dev/null || { echo 'dnf est requis sur Fedora.' >&2; exit 1; }
     command -v rpm2cpio >/dev/null || { echo 'rpm2cpio est requis sur Fedora.' >&2; exit 1; }
     command -v cpio >/dev/null || { echo 'cpio est requis sur Fedora.' >&2; exit 1; }
-    dnf --setopt=multilib_policy=best download --resolve \
-      --arch="$(uname -m)" --arch=noarch --destdir "$cache" \
-      gtk3-devel webkit2gtk4.1-devel
+    if has_archive "gtk3-devel-*.$(uname -m).rpm" && \
+       has_archive "webkit2gtk4.1-devel-*.$(uname -m).rpm"; then
+      echo "Archives GTK3 et WebKitGTK trouvées dans $cache ; téléchargement ignoré."
+    else
+      command -v dnf >/dev/null || { echo 'dnf est requis sur Fedora si les archives sont absentes.' >&2; exit 1; }
+      dnf --setopt=multilib_policy=best download --resolve \
+        --arch="$(uname -m)" --arch=noarch --destdir "$cache" \
+        gtk3-devel webkit2gtk4.1-devel
+    fi
     for package in "$cache"/*."$(uname -m)".rpm "$cache"/*.noarch.rpm; do
-      [[ -f "$package" ]] || continue
-      (cd "$sdk" && rpm2cpio "$package" | cpio -idm --quiet)
+      [[ -s "$package" ]] || continue
+      (cd "$sdk" && rpm2cpio "$package" | cpio -idmu --quiet)
     done
     ;;
   *" debian "*|*" ubuntu "*)
-    command -v apt-get >/dev/null || { echo 'apt-get est requis sur Debian/Ubuntu.' >&2; exit 1; }
     command -v dpkg-deb >/dev/null || { echo 'dpkg-deb est requis sur Debian/Ubuntu.' >&2; exit 1; }
     mkdir -p "$cache/partial"
-    apt-get -y -o Debug::NoLocking=1 -o Dir::Cache::archives="$cache" \
-      --download-only --reinstall install libgtk-3-dev libwebkit2gtk-4.1-dev
+    if has_archive 'libgtk-3-dev_*.deb' && \
+       has_archive 'libwebkit2gtk-4.1-dev_*.deb'; then
+      echo "Archives GTK3 et WebKitGTK trouvées dans $cache ; téléchargement ignoré."
+    else
+      command -v apt-get >/dev/null || { echo 'apt-get est requis sur Debian/Ubuntu si les archives sont absentes.' >&2; exit 1; }
+      apt-get -y -o Debug::NoLocking=1 -o Dir::Cache::archives="$cache" \
+        --download-only --reinstall install libgtk-3-dev libwebkit2gtk-4.1-dev
+    fi
     for package in "$cache"/*.deb; do
-      [[ -f "$package" ]] || continue
+      [[ -s "$package" ]] || continue
       dpkg-deb -x "$package" "$sdk"
     done
     ;;
