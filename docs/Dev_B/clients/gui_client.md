@@ -55,7 +55,7 @@ The 42 subject permits any real graphical toolkit (curses is forbidden).
 
 ## 3. Mandatory GUI Features Checklist
 
-- [ ] **Real-Time Room Updates**: Receiving `EVT ROOM PRESENCE ENTER/LEAVE` or `EVT ITEM TAKE/DROP` immediately updates the room entity lists without requiring manual `LOOK`.
+- [ ] **Real-Time Room Updates**: Parse `EVT ROOM PRESENCE ENTER <username>`, `EVT ROOM PRESENCE LEAVE <username>`, `EVT ROOM ITEM TAKE <username> <item_id>`, and `EVT ROOM ITEM DROP <username> <item_id>`. Update presence immediately and refresh `LOOK` after item events when the item descriptor is needed. See the [shared protocol proposal](../../Commun/protocol/rfc_syntax.md).
 - [ ] **Item Buttons**: Single-click `TAKE` on ground items and `DROP` on inventory items.
 - [ ] **Separation of Views**: Independent tabs for Global Chat, Room Chat, Group Chat, and System/Debug Logs.
 - [ ] **NPC Dialog Display**: Pop-up modal or dedicated text frame displaying the dialogue when `TALK` is triggered.

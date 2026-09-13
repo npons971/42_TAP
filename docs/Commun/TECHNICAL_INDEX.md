@@ -22,8 +22,8 @@ To track progress across the codebase and identify pending team decisions, every
 ### 1. Protocol Specifications (`Commun/protocol/`)
 | Document | Focus | Assigned To | Status |
 |---|---|---|---|
-| [rfc_syntax.md](protocol/rfc_syntax.md) | TCP Framing, ABNF Grammar, Request/Reply lifecycle, Event definitions | Aris (Dev A) & Novanns (Dev B) | `🔵 IN_REVIEW` |
-| [json_payloads.md](protocol/json_payloads.md) | Exact JSON payloads for `LOOK`, `STATUS`, `WHO`, `INVENTORY`, `QUESTS` | Both | `🔴 TO_FILL` |
+| [rfc_syntax.md](protocol/rfc_syntax.md) | TCP framing, 4,096-byte limit, replies, events, IDs | Aris (Dev A) & Novanns (Dev B) | `🔵 IN_REVIEW` — Dev A proposal, Dev B review pending |
+| [json_payloads.md](protocol/json_payloads.md) | JSON payloads for `LOOK`, `STATUS`, `WHO`, `INVENTORY`, `QUESTS` | Both | `🔵 IN_REVIEW` — Dev A proposal, Dev B review pending |
 
 ### 2. Architecture & Concurrency (`Dev_A/architecture/`)
 | Document | Focus | Assigned To | Status |

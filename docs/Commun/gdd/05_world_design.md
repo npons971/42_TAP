@@ -127,6 +127,8 @@ graph TD
 
 Le fichier du monde (`world.yaml` ou `world.json`) respecte la structure type suivante :
 
+Les identifiants suivent la [convention du protocole](../protocol/rfc_syntax.md) : `loc.*` pour les salles, `item.*` pour chaque instance physique unique, `npc.*` pour les PNJ et `quest.*` pour les quêtes. Ils sont stables, uniques, en ASCII minuscule avec `_` entre les mots ; les noms affichés restent du texte UTF-8. Deux exemplaires d'un objet reçoivent deux IDs différents, par exemple `item.apple_1` et `item.apple_2`.
+
 ```yaml
 world:
   locations:

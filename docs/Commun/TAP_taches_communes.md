@@ -46,14 +46,13 @@ Le CLI et la GUI ne doivent pas maintenir leur propre version indépendante du m
 
 ### 1. Format du protocole
 
-Définir précisément :
+La proposition précise du Dev A est consignée dans [rfc_syntax.md](protocol/rfc_syntax.md) et [json_payloads.md](protocol/json_payloads.md), au statut `🔵 IN_REVIEW` jusqu'à la relecture du Dev B et la vérification de la RFC jointe au sujet. Elle fixe les réponses `OK`/`ERR`, les événements `EVT`, une limite de 4 096 octets par ligne, les tableaux d'objets détaillés de `LOOK`/`INVENTORY` et les conventions d'identifiants.
 
-- format `OK`
-- format `ERR`
-- format `EVT`
-- format des réponses JSON
-- noms des identifiants
-- conventions pour rooms/items/NPC/quests
+Points à vérifier ensemble avant de considérer le contrat validé :
+
+- compatibilité de `LOOK` et `INVENTORY` détaillés avec la RFC jointe ;
+- chaîne exacte du message de bienvenue `proto=42TAP/1` ;
+- formats encore ouverts pour le résultat de `ATTACK` et les événements de combat et de quête.
 
 Exemple :
 
