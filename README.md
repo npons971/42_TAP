@@ -1,0 +1,51 @@
+# 42 TAP
+
+This repository is a work in progress for the 42 TAP multiplayer text adventure.
+
+## Current server milestone
+
+The Go TCP server accepts multiple simultaneous connections, sends
+`OK hello proto=42TAP/1` to each client, and supports `CONNECT`, `LOOK`,
+`MOVE`, `CHAT` (`GLOBAL` and `ROOM`), `WHO`, `STATUS`, and `QUIT`. It loads the temporary two-room world in
+[`data/world.json`](data/world.json). The full world and remaining commands
+are future milestones.
+`CHAT GROUP` will become available when groups are implemented.
+The proposed wire contract is in [the protocol documentation](docs/Commun/protocol/rfc_syntax.md).
+
+Go 1.22 or newer is required. Run the server on the default port 4242:
+
+```sh
+make run-server
+```
+
+To use another listen address:
+
+```sh
+make run-server SERVER_ADDR=127.0.0.1:4243
+```
+
+Use `nc 127.0.0.1 4242` from another terminal to connect. Each client first
+receives the greeting. Then try:
+
+```text
+CONNECT alice
+LOOK
+MOVE north
+LOOK
+WHO
+STATUS
+CHAT GLOBAL Bonjour
+QUIT
+```
+
+Open a second `nc` session with `CONNECT bob` to see presence events. `QUIT`
+closes only that client connection; the server keeps accepting clients until
+you stop `make run-server` with Ctrl+C.
+
+Run the networking tests with the race detector:
+
+```sh
+make test-server
+```
+
+`make build-server` writes an executable to `.build/tap-server`.

@@ -1,4 +1,16 @@
-.PHONY: install clean
+.PHONY: install clean build-server run-server test-server
+
+SERVER_ADDR ?= :4242
+
+build-server:
+	mkdir -p .build
+	go build -o .build/tap-server ./cmd/server
+
+run-server:
+	go run ./cmd/server -addr "$(SERVER_ADDR)"
+
+test-server:
+	go test -race ./internal/server
 
 install: go npm wails .webkit-sdk/.installed
 

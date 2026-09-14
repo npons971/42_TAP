@@ -1,0 +1,17 @@
+{
+  "world": {
+    "start": "loc.town_square",
+    "locations": {
+      "loc.town_square": {
+        "name": "Place du Village",
+        "description": "Une place pavee au centre du village.",
+        "exits": {"north": "loc.garden"}
+      },
+      "loc.garden": {
+        "name": "Jardin Abandonne",
+        "description": "Un jardin calme envahi par les herbes.",
+        "exits": {"south": "loc.town_square"}
+      }
+    }
+  }
+}
