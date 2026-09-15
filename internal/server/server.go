@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -26,7 +27,8 @@ const (
 var (
 	errLineTooLong  = errors.New("line too long")
 	errInvalidUTF8  = errors.New("invalid UTF-8")
-	errInvalidLine  = errors.New("invalid line")
+	errEmptyLine    = errors.New("empty line")
+	errCRInLine     = errors.New("carriage return in line")
 	usernamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{2,19}$`)
 )
 
@@ -114,15 +116,17 @@ func (s *Server) serveClient(c *client) {
 			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				return
 			}
-			if !errors.Is(err, errLineTooLong) && !errors.Is(err, errInvalidUTF8) && !errors.Is(err, errInvalidLine) {
+			if !errors.Is(err, errLineTooLong) && !errors.Is(err, errInvalidUTF8) && !errors.Is(err, errEmptyLine) && !errors.Is(err, errCRInLine) {
 				s.logger.Warn("client read failed", "remote_addr", c.conn.RemoteAddr().String(), "error", err)
 				return
 			}
-			reply := "ERR invalid_arguments Invalid line"
+			reply := "ERR invalid_arguments Empty command"
 			if errors.Is(err, errLineTooLong) {
-				reply = "ERR invalid_arguments Message too long"
+				reply = "ERR invalid_arguments Line exceeds 4096 bytes"
 			} else if errors.Is(err, errInvalidUTF8) {
-				reply = "ERR invalid_arguments Invalid UTF-8"
+				reply = "ERR invalid_arguments Line must be valid UTF-8"
+			} else if errors.Is(err, errCRInLine) {
+				reply = "ERR invalid_arguments Use LF without CR"
 			}
 			if !queue(c.outbox, reply) {
 				return
@@ -160,11 +164,11 @@ func (s *Server) handleCommand(c *client, line string) bool {
 	}
 	args := strings.Split(line, " ")
 	if strings.ContainsRune(line, '\t') || args[0] == "" {
-		return queue(c.outbox, "ERR invalid_arguments Invalid spacing")
+		return sendError(c, "invalid_arguments", "Command must start with a verb and use spaces, not tabs")
 	}
 	for _, arg := range args {
 		if arg == "" {
-			return queue(c.outbox, "ERR invalid_arguments Invalid spacing")
+			return sendError(c, "invalid_arguments", args[0]+" must use one space between fixed arguments")
 		}
 	}
 	switch args[0] {
@@ -180,29 +184,58 @@ func (s *Server) handleCommand(c *client, line string) bool {
 		return s.status(c, args)
 	case "QUIT":
 		if len(args) != 1 {
-			return queue(c.outbox, "ERR invalid_arguments QUIT takes no arguments")
+			return sendError(c, "invalid_arguments", "QUIT takes no arguments")
 		}
 		return false
 	default:
-		return queue(c.outbox, "ERR unknown_command Unknown command")
+		name := shortVerb(args[0])
+		if isPlannedCommand(args[0]) {
+			return sendError(c, "not_implemented", fmt.Sprintf("Command %q is not implemented yet", name))
+		}
+		return sendError(c, "unknown_command", fmt.Sprintf("Unknown command %q", name))
+	}
+}
+
+func sendError(c *client, code, message string) bool {
+	return queue(c.outbox, "ERR "+code+" "+message)
+}
+
+func notAuthenticated(c *client, verb string) bool {
+	return sendError(c, "not_authenticated", "Send CONNECT <username> before "+verb)
+}
+
+func shortVerb(verb string) string {
+	runes := []rune(verb)
+	if len(runes) > 24 {
+		return string(runes[:24]) + "…"
+	}
+	return verb
+}
+
+func isPlannedCommand(verb string) bool {
+	switch verb {
+	case "TAKE", "DROP", "INVENTORY", "TALK", "ATTACK", "QUEST", "QUESTS", "GROUP":
+		return true
+	default:
+		return false
 	}
 }
 
 func (s *Server) connect(c *client, args []string) bool {
 	if len(args) != 2 {
-		return queue(c.outbox, "ERR invalid_arguments CONNECT needs one username")
+		return sendError(c, "invalid_arguments", "Usage: CONNECT <username>")
 	}
 	if !usernamePattern.MatchString(args[1]) {
-		return queue(c.outbox, "ERR invalid_arguments Invalid username")
+		return sendError(c, "invalid_arguments", "CONNECT username must start with a lowercase letter and contain 3-20 lowercase letters, digits or underscores")
 	}
 	username := args[1]
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if c.username != "" {
-		return queue(c.outbox, "ERR already_authenticated Already connected")
+		return sendError(c, "already_authenticated", fmt.Sprintf("Connection already uses username %q", c.username))
 	}
 	if _, exists := s.players[username]; exists {
-		return queue(c.outbox, "ERR username_taken Username already in use")
+		return sendError(c, "username_taken", fmt.Sprintf("Username %q is already connected", username))
 	}
 	if !queue(c.outbox, "OK connected") {
 		return false
@@ -217,12 +250,12 @@ func (s *Server) connect(c *client, args []string) bool {
 
 func (s *Server) look(c *client, args []string) bool {
 	if len(args) != 1 {
-		return queue(c.outbox, "ERR invalid_arguments LOOK takes no arguments")
+		return sendError(c, "invalid_arguments", "LOOK takes no arguments")
 	}
 	s.mu.RLock()
 	if c.username == "" {
 		s.mu.RUnlock()
-		return queue(c.outbox, "ERR not_authenticated Send CONNECT first")
+		return notAuthenticated(c, "LOOK")
 	}
 	room := s.world.Locations[c.roomID]
 	players := make([]string, 0)
@@ -241,28 +274,33 @@ func (s *Server) look(c *client, args []string) bool {
 	}{Room: room, Players: players, Items: []interface{}{}, NPCs: []interface{}{}})
 	if err != nil {
 		s.logger.Error("serialize LOOK failed", "error", err)
-		return queue(c.outbox, "ERR invalid_arguments Unable to show room")
+		return sendError(c, "internal_error", "LOOK response could not be encoded")
 	}
 	reply := "OK " + string(payload)
 	if len(reply)+1 > maxLineBytes {
-		return queue(c.outbox, "ERR invalid_arguments Response too large")
+		return sendError(c, "response_too_large", "LOOK response exceeds 4096-byte line limit")
 	}
 	return queue(c.outbox, reply)
 }
 
 func (s *Server) move(c *client, args []string) bool {
-	if len(args) != 2 {
-		return queue(c.outbox, "ERR invalid_arguments MOVE needs one direction")
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if c.username == "" {
-		return queue(c.outbox, "ERR not_authenticated Send CONNECT first")
+		return notAuthenticated(c, "MOVE")
 	}
 	oldRoom := c.roomID
-	destination, exists := s.world.Locations[oldRoom].Exits[args[1]]
+	room := s.world.Locations[oldRoom]
+	available := availableDirections(room)
+	if len(args) != 2 {
+		return sendError(c, "invalid_arguments", fmt.Sprintf("Usage: MOVE <direction>; available from %s: %s", oldRoom, available))
+	}
+	if !directions[args[1]] {
+		return sendError(c, "invalid_direction", fmt.Sprintf("Direction %q is unknown; available from %s: %s", shortVerb(args[1]), oldRoom, available))
+	}
+	destination, exists := room.Exits[args[1]]
 	if !exists {
-		return queue(c.outbox, "ERR invalid_direction No exit in that direction")
+		return sendError(c, "invalid_direction", fmt.Sprintf("No %s exit from %s; available directions: %s", args[1], oldRoom, available))
 	}
 	if !queue(c.outbox, "OK room="+destination) {
 		return false
@@ -275,28 +313,43 @@ func (s *Server) move(c *client, args []string) bool {
 	return true
 }
 
+func availableDirections(room Room) string {
+	if len(room.Exits) == 0 {
+		return "none"
+	}
+	available := make([]string, 0, len(room.Exits))
+	for direction := range room.Exits {
+		available = append(available, direction)
+	}
+	sort.Strings(available)
+	return strings.Join(available, ", ")
+}
+
 func (s *Server) chat(c *client, rest string, hasArgs bool) bool {
 	if !hasArgs || strings.ContainsRune(rest, '\t') {
-		return queue(c.outbox, "ERR invalid_arguments CHAT needs a channel and message")
+		return sendError(c, "invalid_arguments", "Usage: CHAT <GLOBAL|ROOM|GROUP> <message>")
 	}
 	channel, message, hasMessage := strings.Cut(rest, " ")
-	if !hasMessage || strings.TrimSpace(message) == "" {
-		return queue(c.outbox, "ERR invalid_arguments CHAT needs a channel and message")
+	if !hasMessage {
+		return sendError(c, "invalid_arguments", "Usage: CHAT <GLOBAL|ROOM|GROUP> <message>")
+	}
+	if strings.TrimSpace(message) == "" {
+		return sendError(c, "invalid_arguments", "CHAT message cannot be empty")
 	}
 	if channel != "GLOBAL" && channel != "ROOM" && channel != "GROUP" {
-		return queue(c.outbox, "ERR invalid_arguments Invalid chat channel")
+		return sendError(c, "invalid_arguments", fmt.Sprintf("CHAT channel %q is invalid; use GLOBAL, ROOM or GROUP", shortVerb(channel)))
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if c.username == "" {
-		return queue(c.outbox, "ERR not_authenticated Send CONNECT first")
+		return notAuthenticated(c, "CHAT")
 	}
 	if channel == "GROUP" {
-		return queue(c.outbox, "ERR invalid_arguments Not in a group")
+		return sendError(c, "group_required", "CHAT GROUP requires group membership; GROUP is not implemented yet")
 	}
 	event := "EVT " + channel + " CHAT " + c.username + " " + message
 	if len(event)+1 > maxLineBytes {
-		return queue(c.outbox, "ERR invalid_arguments Message too long")
+		return sendError(c, "invalid_arguments", "CHAT message makes the event exceed 4096 bytes; shorten it")
 	}
 	if !queue(c.outbox, "OK") {
 		return false
@@ -311,12 +364,12 @@ func (s *Server) chat(c *client, rest string, hasArgs bool) bool {
 
 func (s *Server) who(c *client, args []string) bool {
 	if len(args) != 1 {
-		return queue(c.outbox, "ERR invalid_arguments WHO takes no arguments")
+		return sendError(c, "invalid_arguments", "WHO takes no arguments")
 	}
 	s.mu.RLock()
 	if c.username == "" {
 		s.mu.RUnlock()
-		return queue(c.outbox, "ERR not_authenticated Send CONNECT first")
+		return notAuthenticated(c, "WHO")
 	}
 	roomPlayers := make([]string, 0)
 	for name, other := range s.players {
@@ -332,23 +385,24 @@ func (s *Server) who(c *client, args []string) bool {
 		Server int      `json:"server"`
 	}{Room: roomPlayers, Server: serverCount})
 	if err != nil {
-		return queue(c.outbox, "ERR invalid_arguments Unable to list players")
+		s.logger.Error("serialize WHO failed", "error", err)
+		return sendError(c, "internal_error", "WHO response could not be encoded")
 	}
 	reply := "OK " + string(payload)
 	if len(reply)+1 > maxLineBytes {
-		return queue(c.outbox, "ERR invalid_arguments Response too large")
+		return sendError(c, "response_too_large", "WHO response exceeds 4096-byte line limit")
 	}
 	return queue(c.outbox, reply)
 }
 
 func (s *Server) status(c *client, args []string) bool {
 	if len(args) != 1 {
-		return queue(c.outbox, "ERR invalid_arguments STATUS takes no arguments")
+		return sendError(c, "invalid_arguments", "STATUS takes no arguments")
 	}
 	s.mu.RLock()
 	if c.username == "" {
 		s.mu.RUnlock()
-		return queue(c.outbox, "ERR not_authenticated Send CONNECT first")
+		return notAuthenticated(c, "STATUS")
 	}
 	username, hp := c.username, c.hp
 	s.mu.RUnlock()
@@ -360,7 +414,8 @@ func (s *Server) status(c *client, args []string) bool {
 		Combat interface{} `json:"combat"`
 	}{Player: username, HP: hp, MaxHP: maxPlayerHP, State: "HORS_COMBAT", Combat: nil})
 	if err != nil {
-		return queue(c.outbox, "ERR invalid_arguments Unable to show status")
+		s.logger.Error("serialize STATUS failed", "error", err)
+		return sendError(c, "internal_error", "STATUS response could not be encoded")
 	}
 	return queue(c.outbox, "OK "+string(payload))
 }
@@ -396,8 +451,11 @@ func readLine(reader *bufio.Reader) (string, error) {
 	if !utf8.Valid(line) {
 		return "", errInvalidUTF8
 	}
-	if len(line) == 0 || strings.ContainsRune(string(line), '\r') {
-		return "", errInvalidLine
+	if len(line) == 0 {
+		return "", errEmptyLine
+	}
+	if strings.ContainsRune(string(line), '\r') {
+		return "", errCRInLine
 	}
 	return string(line), nil
 }
