@@ -68,6 +68,7 @@ EVT ROOM ITEM DROP bob item.apple
 - Chat recipients are the connected players in the specified scope, including the sender.
 - On `MOVE`, send `LEAVE` to remaining players in the old room and `ENTER` to players already in the new room. On disconnect, remove the player first, then send `LEAVE` to remaining room occupants.
 - `ITEM TAKE` and `ITEM DROP` are proposed concrete event forms for live GUI updates. Send them to all players in the room, including the actor, after the actor's `OK` reply is queued. They carry the actor username and the unique item ID. Clients may issue `LOOK` or `INVENTORY` when they need refreshed descriptors.
+- On disconnect, return held item instances to the player's current room and send `ITEM DROP` to the remaining occupants before `PRESENCE LEAVE`. The departing client has already been removed from the recipient list. This keeps unique objects accessible when player state is removed.
 - Combat and quest events must be specified alongside their mechanics; do not invent incompatible wire formats in either client.
 
 ## 5. Identifiers and argument resolution
@@ -75,7 +76,7 @@ EVT ROOM ITEM DROP bob item.apple
 - World IDs are stable, globally unique, lowercase ASCII and match `^(loc|item|npc|quest)\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*$`, with at most 64 bytes total.
 - Prefixes identify the entity kind: `loc.town_square`, `item.rusty_sword`, `npc.guard_captain`, `quest.herbal_cure`.
 - Each physical item instance has its own ID. If two apples exist, use `item.apple_1` and `item.apple_2`; moving an item never changes its ID. Never reuse a live instance ID for another item.
-- Display names are separate UTF-8 text (`Épée rouillée`) and may change without changing an ID. Client actions should send IDs. For `TAKE`/`DROP` and NPC targets, the server also accepts the entire remaining argument as a display name, matched case-insensitively within the relevant room or inventory. An ambiguous display name receives `ERR invalid_arguments Ambiguous name`; an ID remains unambiguous.
+- Display names are separate UTF-8 text (`Épée rouillée`) and may change without changing an ID. Client actions should send IDs. For `TAKE`/`DROP`, the server accepts the entire remaining argument as a display name, without quotation marks and matched case-insensitively within the relevant room or inventory. An ambiguous name receives `ERR invalid_arguments TAKE name matches multiple items; use an item ID` (or the equivalent `DROP` message). NPC target resolution will follow this convention when implemented.
 - Usernames are separate from world IDs and match `^[a-z][a-z0-9_]{2,19}$`: 3–20 ASCII characters, starting with a lowercase letter, followed by lowercase letters, digits, or underscores. For example, `CONNECT aris` is valid and `CONNECT ARIS` is rejected. A malformed username receives `ERR invalid_arguments CONNECT username must start with a lowercase letter and contain 3-20 lowercase letters, digits or underscores`.
 - Directions are lowercase `north`, `south`, `east`, `west`, `up`, or `down`. An unknown or unavailable direction receives `ERR invalid_direction` followed by the current room's available exits, sorted alphabetically. A missing direction receives `ERR invalid_arguments` with the same available-exit list. A room without exits reports `none`.
 

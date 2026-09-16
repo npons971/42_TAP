@@ -26,14 +26,16 @@ Le sujet requiert au minimum **3 rôles distincts** de PNJ. Notre univers en pro
 
 ## 2. Système d'Objets & Inventaire
 
+**Décision du Dev A : objets uniques.** Chaque entrée du catalogue représente une instance physique avec son propre ID. Le serveur conserve une seule position par ID : une salle ou un joueur. Il n'y a pas de quantité ni de pile dans l'état du jeu. `TAKE`, `DROP` et `INVENTORY` sont implémentés ; `LOOK` reflète les objets au sol et les changements produisent les événements `EVT ROOM ITEM TAKE/DROP`. À la déconnexion, l'inventaire est déposé dans la salle courante avant l'événement de départ.
+
 ### Exigences du Sujet
 - Au moins **4 objets distincts**, dont au moins **2 récupérables** dans le monde (`obtainable: true`).
 - Chaque objet est une **instance unique** dans le monde :
-  - `TAKE` le retire définitivement de la pièce.
+  - `TAKE` le retire de la pièce et le place dans l'inventaire du joueur.
   - `DROP` le replace dans la pièce où se tient le joueur.
   - Aucune duplication possible.
 - Support complet des noms composés de plusieurs mots (ex: `Herbes Rares`, `Épée Rouillée`).
-- Résolution par ID technique (ex: `item.rare_herbs`) ou par nom affiché complet sans tenir compte de la casse. Si plusieurs objets du même contexte ont le même nom affiché, le serveur répond `ERR invalid_arguments Ambiguous name` ; les clients envoient de préférence l'ID unique.
+- Résolution par ID technique (ex: `item.rare_herbs`) ou par nom affiché complet sans tenir compte de la casse. Si plusieurs objets du même contexte ont le même nom affiché, le serveur répond par exemple `ERR invalid_arguments TAKE name matches multiple items; use an item ID` ; les clients envoient de préférence l'ID unique.
 
 ### Catalogue des Objets
 
