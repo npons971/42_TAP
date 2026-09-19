@@ -290,7 +290,7 @@ func TestCommandErrorsAreSpecific(t *testing.T) {
 		{"MOVE diagonal", `ERR invalid_direction Direction "diagonal" is unknown; available from loc.town_square: north`},
 		{"MOVE west", "ERR invalid_direction No west exit from loc.town_square; available directions: north"},
 		{"CHAT ROOM ", "ERR invalid_arguments CHAT message cannot be empty"},
-		{"TALK npc.guard", `ERR not_implemented Command "TALK" is not implemented yet`},
+		{"ATTACK npc.guard", `ERR not_implemented Command "ATTACK" is not implemented yet`},
 		{"HO", `ERR unknown_command Unknown command "HO"`},
 		{"QUIT extra", "ERR invalid_arguments QUIT takes no arguments"},
 		{"WHO", `OK {"room":["alice"],"server":1}`},

@@ -38,7 +38,7 @@ func expectRoomItems(t *testing.T, reader *bufio.Reader, ids []string) {
 }
 
 func TestUniqueItemsAcrossClientsAndDisconnect(t *testing.T) {
-	world, err := LoadWorld("../../data/world.json")
+	world, err := LoadWorld("testdata/two_rooms.json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,7 +15,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":4242", "TCP listen address")
-	worldPath := flag.String("world", "data/world.json", "JSON world file")
+	worldPath := flag.String("world", "data/world.json", "JSON world file (default: full nine-room world)")
 	flag.Parse()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))

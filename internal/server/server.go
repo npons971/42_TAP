@@ -49,6 +49,7 @@ type Server struct {
 	clients       map[net.Conn]*client
 	players       map[string]*client
 	itemLocations map[string]itemLocation // One authoritative location per instance.
+	rewardClaims  map[string]string       // Quest ID -> winning username, protected by mu.
 	wg            sync.WaitGroup
 }
 
@@ -61,6 +62,12 @@ func New(logger *slog.Logger, world *World) *Server {
 		clients:       make(map[net.Conn]*client),
 		players:       make(map[string]*client),
 		itemLocations: make(map[string]itemLocation),
+		rewardClaims:  make(map[string]string),
+	}
+	for id, item := range world.Items {
+		if item.InitialLocation != nil && item.InitialLocation.Kind == "reserve" {
+			s.itemLocations[id] = itemLocation{reserved: true}
+		}
 	}
 	for roomID, room := range world.Locations {
 		for _, itemID := range room.Items {
@@ -174,6 +181,12 @@ func (s *Server) handleCommand(c *client, line string) bool {
 	if verb == "TAKE" || verb == "DROP" {
 		return s.transferItem(c, verb, rest, hasArgs)
 	}
+	if verb == "USE" {
+		return s.useItem(c, rest, hasArgs)
+	}
+	if verb == "TALK" {
+		return s.talk(c, rest, hasArgs)
+	}
 	args := strings.Split(line, " ")
 	if strings.ContainsRune(line, '\t') || args[0] == "" {
 		return sendError(c, "invalid_arguments", "Command must start with a verb and use spaces, not tabs")
@@ -228,7 +241,7 @@ func shortVerb(verb string) string {
 
 func isPlannedCommand(verb string) bool {
 	switch verb {
-	case "TALK", "ATTACK", "QUEST", "QUESTS", "GROUP":
+	case "ATTACK", "QUEST", "QUESTS", "GROUP":
 		return true
 	default:
 		return false
@@ -273,6 +286,7 @@ func (s *Server) look(c *client, args []string) bool {
 	}
 	room := s.world.Locations[c.roomID]
 	items := s.roomItemsLocked(c.roomID)
+	npcs := s.roomNPCsLocked(c.roomID)
 	players := make([]string, 0)
 	for username, other := range s.players {
 		if other.roomID == c.roomID {
@@ -282,11 +296,11 @@ func (s *Server) look(c *client, args []string) bool {
 	s.mu.RUnlock()
 	sort.Strings(players)
 	payload, err := json.Marshal(struct {
-		Room    roomView      `json:"room"`
-		Players []string      `json:"players"`
-		Items   []Item        `json:"items"`
-		NPCs    []interface{} `json:"npcs"`
-	}{Room: roomView{ID: room.ID, Name: room.Name, Description: room.Description, Exits: room.Exits}, Players: players, Items: items, NPCs: []interface{}{}})
+		Room    roomView   `json:"room"`
+		Players []string   `json:"players"`
+		Items   []itemView `json:"items"`
+		NPCs    []npcView  `json:"npcs"`
+	}{Room: roomView{ID: room.ID, Name: room.Name, Description: room.Description, Exits: room.Exits}, Players: players, Items: items, NPCs: npcs})
 	if err != nil {
 		s.logger.Error("serialize LOOK failed", "error", err)
 		return sendError(c, "internal_error", "LOOK response could not be encoded")

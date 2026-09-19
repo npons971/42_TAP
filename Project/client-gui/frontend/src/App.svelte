@@ -225,6 +225,10 @@
     } else if (evtType === "ITEM") {
       addMessage("room", "ROOM", rest, "item");
       callLook();
+      if (parts[3] === username.trim() && ["USE", "DELIVER", "REWARD"].includes(parts[2])) {
+        callInventory();
+        callStatus();
+      }
     }
   }
 

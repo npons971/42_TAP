@@ -41,8 +41,8 @@ The initial implementation uses option A. Option B remains an alternative if lat
 
 ### Option A: Read-Write Mutex (`sync.RWMutex`)
 - Protect `GameState` with a global `sync.RWMutex` (or fine-grained per-room mutexes).
-- Read-heavy commands (`LOOK`, `WHO`, `STATUS`) acquire `mu.RLock()`.
-- State-mutating commands (`MOVE`, `TAKE`, `DROP`, `ATTACK`) acquire `mu.Lock()`.
+- Read-heavy commands (`LOOK`, `WHO`, `STATUS`, `INVENTORY`) acquire `mu.RLock()`.
+- State-mutating commands (`MOVE`, `TAKE`, `DROP`, `USE`, `TALK`, `ATTACK`) acquire `mu.Lock()`.
 - *Pros*: Natural and idiomatic in Go; high read throughput.
 - *Risks*: Must never hold locks while writing to network sockets (causes deadlocks).
 
@@ -52,9 +52,17 @@ The initial implementation uses option A. Option B remains an alternative if lat
 - *Pros*: Completely eliminates mutex contention and data race conditions by design.
 - *Risks*: Slightly higher boilerplate for command return channels.
 
-> **Initial decision**: Use a single `sync.RWMutex` around the connected-player maps, player positions and `itemLocations`. `LOOK`, `WHO`, `STATUS` and `INVENTORY` take a read lock; `CONNECT`, `MOVE`, `TAKE`, `DROP` and disconnect take a write lock. Broadcasts only enqueue into bounded per-client channels while the lock is held; socket writes happen in dedicated writer goroutines. Revisit lock granularity if measurements show contention when combat is added.
+> **Initial decision**: Use a single `sync.RWMutex` around the connected-player maps, player positions and `itemLocations`. `LOOK`, `WHO`, `STATUS` and `INVENTORY` take a read lock; `CONNECT`, `MOVE`, `TAKE`, `DROP`, `USE`, `TALK` and disconnect take a write lock. Broadcasts only enqueue into bounded per-client channels while the lock is held; socket writes happen in dedicated writer goroutines. Revisit lock granularity if measurements show contention when combat is added.
 
-Each unique item has one authoritative runtime position: either a room ID or a player owner. `TAKE` and `DROP` resolve the target, check ownership, enqueue the success response and change ownership under the same write lock. Two concurrent `TAKE` commands therefore cannot acquire the same instance. The actor receives the success response before their `EVT ROOM ITEM` event. The catalogue and initial room placements remain static; `LOOK` uses runtime positions.
+Each unique item has one authoritative runtime position: a room ID, a player owner, an explicit off-map reserve or a terminal consumed state. Reserved reward instances are initialized once and are excluded from TAKE/DROP resolution and room/inventory views. `TAKE` and `DROP` resolve the target, check ownership, enqueue the success response and change ownership under the same write lock. Two concurrent `TAKE` commands therefore cannot acquire the same instance. The actor receives the success response before their `EVT ROOM ITEM` event. The catalogue and initial room placements remain static; `LOOK` uses runtime positions.
+
+The NPC catalogue and room placements are immutable after loading. TALK
+resolves local targets under the write lock because it may deliver an owned
+ingredient and allocate a unique reward. USE also holds that lock through
+ownership checks, reply queuing, consumption and healing. Global rewardClaims
+survive disconnect; disconnect returns only owned items, never consumed ones.
+TALK preflights encoding/line length and reply queuing before any delivery
+mutation. No network writes occur under this lock; broadcasts enqueue events.
 
 ---
 

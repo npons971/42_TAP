@@ -1,16 +1,19 @@
 .PHONY: install clean build-server run-server test-server
 
 SERVER_ADDR ?= :4242
+WORLD_FILE ?= data/world.json
+export GOPATH := $(CURDIR)/.go-work
+export GOCACHE := $(CURDIR)/.go-cache
 
-build-server:
+build-server: go
 	mkdir -p .build
-	go build -o .build/tap-server ./cmd/server
+	./go build -o .build/tap-server ./cmd/server
 
-run-server:
-	go run ./cmd/server -addr "$(SERVER_ADDR)"
+run-server: go
+	./go run ./cmd/server -addr "$(SERVER_ADDR)" -world "$(WORLD_FILE)"
 
-test-server:
-	go test -race ./internal/server
+test-server: go
+	./go test -race ./internal/server
 
 install: go npm wails .webkit-sdk/.installed
 
