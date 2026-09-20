@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+	"unicode/utf8"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -23,6 +25,9 @@ type App struct {
 	connMu    sync.RWMutex
 	connected bool
 	username  string
+	sessionMu sync.Mutex
+	replyMu   sync.Mutex
+	pending   []string
 }
 
 // NewApp creates a new App instance.
@@ -42,6 +47,8 @@ func (a *App) shutdown(ctx context.Context) {
 
 // Connect opens a TCP connection to the server and registers the player.
 func (a *App) Connect(host string, port int, username string) error {
+	a.sessionMu.Lock()
+	defer a.sessionMu.Unlock()
 	a.connMu.Lock()
 	if a.connected && a.conn != nil {
 		a.connMu.Unlock()
@@ -55,26 +62,30 @@ func (a *App) Connect(host string, port int, username string) error {
 	}
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	conn, err := net.Dial("tcp", addr)
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("connection failed to %s: %w", addr, err)
 	}
 
 	a.connMu.Lock()
 	a.conn = conn
-	a.reader = bufio.NewReader(conn)
+	reader := bufio.NewReader(conn)
+	a.reader = reader
 	a.writer = bufio.NewWriter(conn)
 	a.connected = true
 	a.username = cleanUser
+	a.replyMu.Lock()
+	a.pending = nil
+	a.replyMu.Unlock()
 	a.connMu.Unlock()
 
 	// Launch async reader goroutine for continuous streaming
-	go a.listenServer()
+	go a.listenServer(conn, reader)
 
 	// Send initial CONNECT command
 	connectCmd := fmt.Sprintf("CONNECT %s", cleanUser)
 	if err := a.SendCommand(connectCmd); err != nil {
-		_ = a.Disconnect()
+		_ = a.disconnect()
 		return fmt.Errorf("failed to send CONNECT: %w", err)
 	}
 
@@ -83,21 +94,29 @@ func (a *App) Connect(host string, port int, username string) error {
 
 // Disconnect gracefully terminates the TCP connection.
 func (a *App) Disconnect() error {
-	a.connMu.Lock()
-	defer a.connMu.Unlock()
+	a.sessionMu.Lock()
+	defer a.sessionMu.Unlock()
+	return a.disconnect()
+}
 
-	if !a.connected || a.conn == nil {
+func (a *App) disconnect() error {
+	a.connMu.RLock()
+	conn := a.conn
+	a.connMu.RUnlock()
+	if conn == nil {
 		return nil
 	}
-
-	// Try sending QUIT if still alive
-	_ = a.sendRaw("QUIT\n")
-
-	err := a.conn.Close()
-	a.conn = nil
-	a.connected = false
-	a.username = ""
-
+	_ = a.SendCommand("QUIT")
+	err := conn.Close()
+	a.connMu.Lock()
+	if a.conn == conn {
+		a.conn = nil
+		a.reader = nil
+		a.writer = nil
+		a.connected = false
+		a.username = ""
+	}
+	a.connMu.Unlock()
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "disconnected", "Client disconnected")
 	}
@@ -109,6 +128,9 @@ func (a *App) SendCommand(cmd string) error {
 	cleanCmd := strings.TrimSpace(cmd)
 	if cleanCmd == "" {
 		return nil
+	}
+	if len(cleanCmd)+1 > 4096 || !utf8.ValidString(cleanCmd) || strings.ContainsAny(cleanCmd, "\r\n") {
+		return fmt.Errorf("command must be valid UTF-8 on one line of at most 4096 bytes")
 	}
 	return a.sendRaw(cleanCmd + "\n")
 }
@@ -124,10 +146,23 @@ func (a *App) sendRaw(payload string) error {
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()
 
+	a.replyMu.Lock()
+	if len(a.pending) >= 128 {
+		a.replyMu.Unlock()
+		return fmt.Errorf("too many pending commands; wait for server replies")
+	}
+	a.pending = append(a.pending, strings.TrimSuffix(payload, "\n"))
+	a.replyMu.Unlock()
+	_ = a.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if _, err := a.writer.WriteString(payload); err != nil {
+		_ = a.conn.Close()
 		return err
 	}
-	return a.writer.Flush()
+	err := a.writer.Flush()
+	if err != nil {
+		_ = a.conn.Close()
+	}
+	return err
 }
 
 // Specific gameplay action bindings
@@ -136,7 +171,7 @@ func (a *App) Move(direction string) error {
 }
 
 func (a *App) Look() error {
-	return a.SendCommand("LOOK")
+	return a.SendCommand("LOOK DETAILS")
 }
 
 func (a *App) Take(item string) error {
@@ -148,11 +183,11 @@ func (a *App) Drop(item string) error {
 }
 
 func (a *App) Inventory() error {
-	return a.SendCommand("INVENTORY")
+	return a.SendCommand("INVENTORY DETAILS")
 }
 
 func (a *App) Talk(npc string) error {
-	return a.SendCommand(fmt.Sprintf("TALK %s", strings.TrimSpace(npc)))
+	return a.SendCommand(fmt.Sprintf("TALKJSON %s", strings.TrimSpace(npc)))
 }
 
 func (a *App) Attack(target string) error {
@@ -167,8 +202,8 @@ func (a *App) Status() error {
 	return a.SendCommand("STATUS")
 }
 
-func (a *App) Quest(questID string) error {
-	return a.SendCommand(fmt.Sprintf("QUEST %s", strings.TrimSpace(questID)))
+func (a *App) Quest(npc string) error {
+	return a.SendCommand(fmt.Sprintf("QUEST %s", strings.TrimSpace(npc)))
 }
 
 func (a *App) Quests() error {
@@ -201,35 +236,63 @@ func (a *App) GetUsername() string {
 }
 
 // listenServer is a background loop reading \n-terminated messages from TCP.
-func (a *App) listenServer() {
+func (a *App) listenServer(conn net.Conn, reader *bufio.Reader) {
+	defer func() {
+		conn.Close()
+		a.connMu.Lock()
+		current := a.conn == conn
+		if current {
+			a.connected = false
+			a.conn = nil
+			a.reader = nil
+			a.writer = nil
+		}
+		a.connMu.Unlock()
+		if current && a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "disconnected", "Connection closed by server")
+		}
+	}()
 	for {
-		a.connMu.RLock()
-		reader := a.reader
-		a.connMu.RUnlock()
 
 		if reader == nil {
 			break
 		}
 
-		line, err := reader.ReadString('\n')
+		frame, err := reader.ReadSlice('\n')
+		line := string(frame)
 		if err != nil {
 			if err != io.EOF && !strings.Contains(err.Error(), "use of closed network connection") {
 				if a.ctx != nil {
 					runtime.EventsEmit(a.ctx, "server_error", err.Error())
 				}
 			}
-			a.connMu.Lock()
-			a.connected = false
-			a.conn = nil
-			a.connMu.Unlock()
-
-			if a.ctx != nil {
-				runtime.EventsEmit(a.ctx, "disconnected", "Connection closed by server")
-			}
 			break
 		}
 
-		line = strings.TrimRight(line, "\r\n")
+		if len(line) > 4096 || !utf8.ValidString(line) || strings.ContainsRune(line, '\r') {
+			if a.ctx != nil {
+				runtime.EventsEmit(a.ctx, "server_error", "Invalid server frame")
+			}
+			return
+		}
+		line = strings.TrimSuffix(line, "\n")
+		a.connMu.RLock()
+		current := a.conn == conn
+		if !current {
+			a.connMu.RUnlock()
+			return
+		}
+		command, request := "", ""
+		if (line == "OK" || strings.HasPrefix(line, "OK ") || strings.HasPrefix(line, "ERR ")) && !strings.HasPrefix(line, "OK hello ") {
+			a.replyMu.Lock()
+			if len(a.pending) > 0 {
+				request = a.pending[0]
+				command = strings.ToUpper(strings.Fields(request)[0])
+				a.pending = a.pending[1:]
+			}
+			a.replyMu.Unlock()
+		}
+		a.connMu.RUnlock()
 		if line == "" {
 			continue
 		}
@@ -243,13 +306,15 @@ func (a *App) listenServer() {
 
 		// Typed event emission for reactive UI updates
 		switch {
-		case strings.HasPrefix(line, "OK"):
+		case line == "OK" || strings.HasPrefix(line, "OK "):
 			payload := strings.TrimSpace(strings.TrimPrefix(line, "OK"))
 			runtime.EventsEmit(a.ctx, "server_ok", payload)
-		case strings.HasPrefix(line, "ERR"):
+			runtime.EventsEmit(a.ctx, "server_reply", map[string]string{"kind": "OK", "command": command, "payload": payload, "request": request})
+		case strings.HasPrefix(line, "ERR "):
 			payload := strings.TrimSpace(strings.TrimPrefix(line, "ERR"))
 			runtime.EventsEmit(a.ctx, "server_err", payload)
-		case strings.HasPrefix(line, "EVT"):
+			runtime.EventsEmit(a.ctx, "server_reply", map[string]string{"kind": "ERR", "command": command, "payload": payload, "request": request})
+		case strings.HasPrefix(line, "EVT "):
 			payload := strings.TrimSpace(strings.TrimPrefix(line, "EVT"))
 			runtime.EventsEmit(a.ctx, "server_evt", payload)
 		}
