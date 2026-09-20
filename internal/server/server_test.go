@@ -44,13 +44,13 @@ func dialTestClient(t *testing.T, addr string) (net.Conn, *bufio.Reader) {
 	t.Cleanup(func() { _ = conn.Close() })
 	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 	reader := bufio.NewReader(conn)
-	expectLine(t, reader, "OK hello proto=42TAP/1")
+	expectLine(t, reader, "OK hello proto=1")
 	return conn, reader
 }
 
 func expectLine(t *testing.T, reader *bufio.Reader, want string) {
 	t.Helper()
-	got, err := reader.ReadString('\n')
+	got, err := readTestLine(reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,22 +69,23 @@ func TestConcurrentClientsAndShutdown(t *testing.T) {
 	if _, err := io.WriteString(bob, "PING\n"); err != nil {
 		t.Fatal(err)
 	}
-	expectLine(t, bobReader, `ERR unknown_command Unknown command "PING"`)
+	expectLine(t, bobReader, `ERR 400 UNKNOWN_COMMAND Unknown command "PING"`)
 	if _, err := io.WriteString(alice, "PING\n"); err != nil {
 		t.Fatal(err)
 	}
-	expectLine(t, aliceReader, `ERR unknown_command Unknown command "PING"`)
+	expectLine(t, aliceReader, `ERR 400 UNKNOWN_COMMAND Unknown command "PING"`)
 
 	if _, err := io.WriteString(alice, "QUIT\n"); err != nil {
 		t.Fatal(err)
 	}
+	expectLine(t, aliceReader, "OK bye")
 	if _, err := aliceReader.ReadByte(); err != io.EOF {
 		t.Fatalf("QUIT should close only Alice's connection, got %v", err)
 	}
 	if _, err := io.WriteString(bob, "PING\n"); err != nil {
 		t.Fatal(err)
 	}
-	expectLine(t, bobReader, `ERR unknown_command Unknown command "PING"`)
+	expectLine(t, bobReader, `ERR 400 UNKNOWN_COMMAND Unknown command "PING"`)
 
 	cancel()
 	select {
@@ -110,8 +111,8 @@ func TestOversizedLineDoesNotBreakFollowingRequest(t *testing.T) {
 	if _, err := io.WriteString(conn, strings.Repeat("x", maxLineBytes)+"\nPING\n"); err != nil {
 		t.Fatal(err)
 	}
-	expectLine(t, reader, "ERR invalid_arguments Line exceeds 4096 bytes")
-	expectLine(t, reader, `ERR unknown_command Unknown command "PING"`)
+	expectLine(t, reader, "ERR 400 INVALID_ARGUMENTS Line exceeds 4096 bytes")
+	expectLine(t, reader, `ERR 400 UNKNOWN_COMMAND Unknown command "PING"`)
 }
 
 func sendCommand(t *testing.T, conn net.Conn, command string) {
@@ -123,7 +124,7 @@ func sendCommand(t *testing.T, conn net.Conn, command string) {
 
 func expectLook(t *testing.T, reader *bufio.Reader, roomID string, players []string) {
 	t.Helper()
-	line, err := reader.ReadString('\n')
+	line, err := readTestLine(reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,54 +157,55 @@ func TestConnectLookMoveAndPresence(t *testing.T) {
 	alice, aliceReader := dialTestClient(t, addr)
 	bob, bobReader := dialTestClient(t, addr)
 
-	sendCommand(t, alice, "LOOK")
-	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT <username> before LOOK")
+	sendCommand(t, alice, "LOOK DETAILS")
+	expectLine(t, aliceReader, "ERR 403 NOT_AUTHENTICATED Send CONNECT <username> before LOOK")
 	sendCommand(t, alice, "CONNECT")
-	expectLine(t, aliceReader, "ERR invalid_arguments Usage: CONNECT <username>")
+	expectLine(t, aliceReader, "ERR 400 INVALID_ARGUMENTS Usage: CONNECT <username>")
 	sendCommand(t, alice, "CONNECT N")
-	expectLine(t, aliceReader, "ERR invalid_arguments CONNECT username must start with a lowercase letter and contain 3-20 lowercase letters, digits or underscores")
+	expectLine(t, aliceReader, "ERR 400 INVALID_ARGUMENTS CONNECT username must start with a lowercase letter and contain 3-20 lowercase letters, digits or underscores")
 	sendCommand(t, alice, "CONNECT ARIS")
-	expectLine(t, aliceReader, "ERR invalid_arguments CONNECT username must start with a lowercase letter and contain 3-20 lowercase letters, digits or underscores")
+	expectLine(t, aliceReader, "ERR 400 INVALID_ARGUMENTS CONNECT username must start with a lowercase letter and contain 3-20 lowercase letters, digits or underscores")
 	sendCommand(t, alice, "CONNECT  alice")
-	expectLine(t, aliceReader, "ERR invalid_arguments CONNECT must use one space between fixed arguments")
+	expectLine(t, aliceReader, "ERR 400 INVALID_ARGUMENTS CONNECT must use one space between fixed arguments")
 	sendCommand(t, alice, "CONNECT alice")
 	expectLine(t, aliceReader, "OK connected")
 	sendCommand(t, alice, "CONNECT alice")
-	expectLine(t, aliceReader, `ERR already_authenticated Connection already uses username "alice"`)
+	expectLine(t, aliceReader, `ERR 409 ALREADY_AUTHENTICATED Connection already uses username "alice"`)
 	sendCommand(t, bob, "MOVE north")
-	expectLine(t, bobReader, "ERR not_authenticated Send CONNECT <username> before MOVE")
+	expectLine(t, bobReader, "ERR 403 NOT_AUTHENTICATED Send CONNECT <username> before MOVE")
 	sendCommand(t, bob, "CONNECT alice")
-	expectLine(t, bobReader, `ERR username_taken Username "alice" is already connected`)
+	expectLine(t, bobReader, `ERR 201 NAME_IN_USE Username "alice" is already connected`)
 	sendCommand(t, bob, "CONNECT bob")
 	expectLine(t, bobReader, "OK connected")
 	expectLine(t, aliceReader, "EVT ROOM PRESENCE ENTER bob")
 
-	sendCommand(t, alice, "LOOK")
+	sendCommand(t, alice, "LOOK DETAILS")
 	expectLook(t, aliceReader, "loc.town_square", []string{"alice", "bob"})
 	sendCommand(t, alice, "LOOK extra")
-	expectLine(t, aliceReader, "ERR invalid_arguments LOOK takes no arguments")
+	expectLine(t, aliceReader, "ERR 400 INVALID_ARGUMENTS LOOK takes no arguments")
 	sendCommand(t, alice, "MOVE")
-	expectLine(t, aliceReader, "ERR invalid_arguments Usage: MOVE <direction>; available from loc.town_square: north")
+	expectLine(t, aliceReader, "ERR 400 INVALID_ARGUMENTS Usage: MOVE <direction>; available from loc.town_square: north")
 	sendCommand(t, alice, "MOVE north")
 	expectLine(t, aliceReader, "OK room=loc.garden")
 	expectLine(t, bobReader, "EVT ROOM PRESENCE LEAVE alice")
-	sendCommand(t, bob, "LOOK")
+	sendCommand(t, bob, "LOOK DETAILS")
 	expectLook(t, bobReader, "loc.town_square", []string{"bob"})
 	sendCommand(t, bob, "MOVE north")
 	expectLine(t, bobReader, "OK room=loc.garden")
 	expectLine(t, aliceReader, "EVT ROOM PRESENCE ENTER bob")
-	sendCommand(t, alice, "LOOK")
+	sendCommand(t, alice, "LOOK DETAILS")
 	expectLook(t, aliceReader, "loc.garden", []string{"alice", "bob"})
 	sendCommand(t, bob, "MOVE west")
-	expectLine(t, bobReader, "ERR invalid_direction No west exit from loc.garden; available directions: south")
+	expectLine(t, bobReader, "ERR 301 NO_EXIT No west exit from loc.garden; available directions: south")
 	sendCommand(t, bob, "QUIT now")
-	expectLine(t, bobReader, "ERR invalid_arguments QUIT takes no arguments")
+	expectLine(t, bobReader, "ERR 400 INVALID_ARGUMENTS QUIT takes no arguments")
 	sendCommand(t, bob, "QUIT")
+	expectLine(t, bobReader, "OK bye")
 	if _, err := bobReader.ReadByte(); err != io.EOF {
 		t.Fatalf("QUIT should close Bob's socket, got %v", err)
 	}
 	expectLine(t, aliceReader, "EVT ROOM PRESENCE LEAVE bob")
-	sendCommand(t, alice, "LOOK")
+	sendCommand(t, alice, "LOOK DETAILS")
 	expectLook(t, aliceReader, "loc.garden", []string{"alice"})
 }
 
@@ -234,30 +236,30 @@ func TestChatWhoAndStatus(t *testing.T) {
 	alice, aliceReader := dialTestClient(t, addr)
 	bob, bobReader := dialTestClient(t, addr)
 
-	sendCommand(t, alice, "WHO")
-	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT <username> before WHO")
+	sendCommand(t, alice, "WHO DETAILS")
+	expectLine(t, aliceReader, "ERR 403 NOT_AUTHENTICATED Send CONNECT <username> before WHO")
 	sendCommand(t, alice, "STATUS")
-	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT <username> before STATUS")
+	expectLine(t, aliceReader, "ERR 403 NOT_AUTHENTICATED Send CONNECT <username> before STATUS")
 	sendCommand(t, alice, "CHAT GLOBAL Hello")
-	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT <username> before CHAT")
+	expectLine(t, aliceReader, "ERR 403 NOT_AUTHENTICATED Send CONNECT <username> before CHAT")
 	sendCommand(t, alice, "CONNECT alice")
 	expectLine(t, aliceReader, "OK connected")
 	sendCommand(t, bob, "CONNECT bob")
 	expectLine(t, bobReader, "OK connected")
 	expectLine(t, aliceReader, "EVT ROOM PRESENCE ENTER bob")
 
-	sendCommand(t, alice, "WHO")
+	sendCommand(t, alice, "WHO DETAILS")
 	expectLine(t, aliceReader, `OK {"room":["alice","bob"],"server":2}`)
 	sendCommand(t, bob, "MOVE north")
 	expectLine(t, bobReader, "OK room=loc.garden")
 	expectLine(t, aliceReader, "EVT ROOM PRESENCE LEAVE bob")
-	sendCommand(t, alice, "WHO")
+	sendCommand(t, alice, "WHO DETAILS")
 	expectLine(t, aliceReader, `OK {"room":["alice"],"server":2}`)
 
 	sendCommand(t, alice, "CHAT ROOM Hello  from the square")
 	expectLine(t, aliceReader, "OK")
 	expectLine(t, aliceReader, "EVT ROOM CHAT alice Hello  from the square")
-	sendCommand(t, bob, "WHO")
+	sendCommand(t, bob, "WHO DETAILS")
 	expectLine(t, bobReader, `OK {"room":["bob"],"server":2}`)
 	sendCommand(t, bob, "CHAT GLOBAL Hello everyone")
 	expectLine(t, bobReader, "OK")
@@ -265,13 +267,13 @@ func TestChatWhoAndStatus(t *testing.T) {
 	expectLine(t, aliceReader, "EVT GLOBAL CHAT bob Hello everyone")
 
 	sendCommand(t, bob, "STATUS")
-	expectLine(t, bobReader, `OK {"player":"bob","hp":100,"max_hp":100,"state":"HORS_COMBAT","combat":null}`)
+	expectLine(t, bobReader, `OK {"status":"healthy","player":"bob","hp":100,"max_hp":100,"state":"HORS_COMBAT","combat":null}`)
 	sendCommand(t, bob, "CHAT ROOM")
-	expectLine(t, bobReader, "ERR invalid_arguments Usage: CHAT <GLOBAL|ROOM|GROUP> <message>")
+	expectLine(t, bobReader, "ERR 400 INVALID_ARGUMENTS Usage: CHAT <GLOBAL|ROOM|GROUP> <message>")
 	sendCommand(t, bob, "CHAT PRIVATE Hello")
-	expectLine(t, bobReader, `ERR invalid_arguments CHAT channel "PRIVATE" is invalid; use GLOBAL, ROOM or GROUP`)
+	expectLine(t, bobReader, `ERR 400 INVALID_ARGUMENTS CHAT channel "PRIVATE" is invalid; use GLOBAL, ROOM or GROUP`)
 	sendCommand(t, bob, "CHAT GROUP Hello")
-	expectLine(t, bobReader, "ERR group_required CHAT GROUP requires group membership; GROUP is not implemented yet")
+	expectLine(t, bobReader, "ERR 401 NOT_IN_GROUP CHAT GROUP requires group membership; use GROUP CREATE or GROUP JOIN")
 }
 
 func TestCommandErrorsAreSpecific(t *testing.T) {
@@ -280,22 +282,32 @@ func TestCommandErrorsAreSpecific(t *testing.T) {
 	conn, reader := dialTestClient(t, addr)
 
 	for _, step := range []struct{ command, reply string }{
-		{"", "ERR invalid_arguments Empty command"},
-		{"LOOK\r", "ERR invalid_arguments Use LF without CR"},
-		{"CONNECT", "ERR invalid_arguments Usage: CONNECT <username>"},
+		{"", "ERR 400 INVALID_ARGUMENTS Empty command"},
+		{"LOOK\r", "ERR 400 INVALID_ARGUMENTS Use LF without CR"},
+		{"CONNECT", "ERR 400 INVALID_ARGUMENTS Usage: CONNECT <username>"},
 		{"CONNECT alice", "OK connected"},
-		{"WHO extra", "ERR invalid_arguments WHO takes no arguments"},
-		{"STATUS extra", "ERR invalid_arguments STATUS takes no arguments"},
-		{"MOVE", "ERR invalid_arguments Usage: MOVE <direction>; available from loc.town_square: north"},
-		{"MOVE diagonal", `ERR invalid_direction Direction "diagonal" is unknown; available from loc.town_square: north`},
-		{"MOVE west", "ERR invalid_direction No west exit from loc.town_square; available directions: north"},
-		{"CHAT ROOM ", "ERR invalid_arguments CHAT message cannot be empty"},
-		{"ATTACK npc.guard", `ERR not_implemented Command "ATTACK" is not implemented yet`},
-		{"HO", `ERR unknown_command Unknown command "HO"`},
-		{"QUIT extra", "ERR invalid_arguments QUIT takes no arguments"},
-		{"WHO", `OK {"room":["alice"],"server":1}`},
+		{"WHO extra", "ERR 400 INVALID_ARGUMENTS WHO takes no arguments"},
+		{"STATUS extra", "ERR 400 INVALID_ARGUMENTS STATUS takes no arguments"},
+		{"MOVE", "ERR 400 INVALID_ARGUMENTS Usage: MOVE <direction>; available from loc.town_square: north"},
+		{"MOVE diagonal", `ERR 301 NO_EXIT Direction "diagonal" is unknown; available from loc.town_square: north`},
+		{"MOVE west", "ERR 301 NO_EXIT No west exit from loc.town_square; available directions: north"},
+		{"CHAT ROOM ", "ERR 400 INVALID_ARGUMENTS CHAT message cannot be empty"},
+		{"ATTACK npc.guard", `ERR 404 NPC_NOT_FOUND ATTACK target "npc.guard" is not in loc.town_square; use LOOK`},
+		{"HO", `ERR 400 UNKNOWN_COMMAND Unknown command "HO"`},
+		{"QUIT extra", "ERR 400 INVALID_ARGUMENTS QUIT takes no arguments"},
+		{"WHO", "OK players=1"},
 	} {
 		sendCommand(t, conn, step.command)
 		expectLine(t, reader, step.reply)
+	}
+}
+
+// Gameplay tests ignore count notifications; RFC event tests read the raw stream.
+func readTestLine(r *bufio.Reader) (string, error) {
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil || !strings.HasPrefix(line, "EVT STATS ") {
+			return line, err
+		}
 	}
 }

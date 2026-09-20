@@ -39,16 +39,16 @@ func TestConsumablesTCP(t *testing.T) {
 	defer stop()
 	conn, r := dialTestClient(t, addr)
 	sendCommand(t, conn, "USE item.apple")
-	expectLine(t, r, "ERR not_authenticated Send CONNECT <username> before USE")
+	expectLine(t, r, "ERR 403 NOT_AUTHENTICATED Send CONNECT <username> before USE")
 	sendCommand(t, conn, "CONNECT alice")
 	expectLine(t, r, "OK connected")
 	for _, tc := range []struct{ command, want string }{
-		{"USE", "ERR invalid_arguments Usage: USE <item_id or full display name>"},
-		{"USE   ", "ERR invalid_arguments Usage: USE <item_id or full display name>"},
-		{"USE item.apple ", "ERR invalid_arguments USE target must not contain tabs or surrounding spaces"},
-		{"USE Fresh\tApple", "ERR invalid_arguments USE target must not contain tabs or surrounding spaces"},
-		{"USE item.apple", `ERR not_in_inventory USE target "item.apple" is not in your inventory; use INVENTORY`},
-		{"USE item.vigor_potion", `ERR not_in_inventory USE target "item.vigor_potion" is not in your inventory; use INVENTORY`},
+		{"USE", "ERR 400 INVALID_ARGUMENTS Usage: USE <item_id or full display name>"},
+		{"USE   ", "ERR 400 INVALID_ARGUMENTS Usage: USE <item_id or full display name>"},
+		{"USE item.apple ", "ERR 400 INVALID_ARGUMENTS USE target must not contain tabs or surrounding spaces"},
+		{"USE Fresh\tApple", "ERR 400 INVALID_ARGUMENTS USE target must not contain tabs or surrounding spaces"},
+		{"USE item.apple", `ERR 404 ITEM_NOT_IN_INVENTORY USE target "item.apple" is not in your inventory; use INVENTORY`},
+		{"USE item.vigor_potion", `ERR 404 ITEM_NOT_IN_INVENTORY USE target "item.vigor_potion" is not in your inventory; use INVENTORY`},
 	} {
 		sendCommand(t, conn, tc.command)
 		expectLine(t, r, tc.want)
@@ -59,8 +59,8 @@ func TestConsumablesTCP(t *testing.T) {
 	expectLine(t, r, "OK taken=item.apple")
 	expectLine(t, r, "EVT ROOM ITEM TAKE alice item.apple")
 	sendCommand(t, conn, "USE Fresh Apple")
-	expectLine(t, r, "ERR health_full USE cannot restore HP: health is already full; item kept")
-	sendCommand(t, conn, "INVENTORY")
+	expectLine(t, r, "ERR 409 HEALTH_FULL USE cannot restore HP: health is already full; item kept")
+	sendCommand(t, conn, "INVENTORY DETAILS")
 	expectLine(t, r, `OK [{"id":"item.apple","name":"Fresh Apple"}]`)
 	s.mu.Lock()
 	s.players["alice"].hp = 95
@@ -69,10 +69,10 @@ func TestConsumablesTCP(t *testing.T) {
 	expectLine(t, r, "OK used=item.apple hp=100/100")
 	expectLine(t, r, "EVT ROOM ITEM USE alice item.apple")
 	sendCommand(t, conn, "STATUS")
-	expectLine(t, r, `OK {"player":"alice","hp":100,"max_hp":100,"state":"HORS_COMBAT","combat":null}`)
-	sendCommand(t, conn, "INVENTORY")
+	expectLine(t, r, `OK {"status":"healthy","player":"alice","hp":100,"max_hp":100,"state":"HORS_COMBAT","combat":null}`)
+	sendCommand(t, conn, "INVENTORY DETAILS")
 	expectLine(t, r, "OK []")
-	sendCommand(t, conn, "LOOK")
+	sendCommand(t, conn, "LOOK DETAILS")
 	expectRoomItems(t, r, []string{})
 	for _, command := range []string{"USE", "DROP", "TAKE"} {
 		sendCommand(t, conn, command+" item.apple")
@@ -80,7 +80,7 @@ func TestConsumablesTCP(t *testing.T) {
 		if command == "TAKE" {
 			code, message = "item_not_found", "is not in loc.market; use LOOK"
 		}
-		expectLine(t, r, fmt.Sprintf("ERR %s %s target %q %s", code, command, "item.apple", message))
+		expectLine(t, r, fmt.Sprintf("ERR %s %s target %q %s", errorSpecs[code], command, "item.apple", message))
 	}
 	sendCommand(t, conn, "MOVE north")
 	expectLine(t, r, "OK room=loc.tavern")
@@ -99,8 +99,8 @@ func TestConsumablesTCP(t *testing.T) {
 	expectLine(t, r, "OK taken=item.rusty_sword")
 	expectLine(t, r, "EVT ROOM ITEM TAKE alice item.rusty_sword")
 	sendCommand(t, conn, "USE Rusty Sword")
-	expectLine(t, r, "ERR item_not_usable Item item.rusty_sword cannot be consumed with USE")
-	sendCommand(t, conn, "INVENTORY")
+	expectLine(t, r, "ERR 405 ITEM_NOT_USABLE Item item.rusty_sword cannot be consumed with USE")
+	sendCommand(t, conn, "INVENTORY DETAILS")
 	expectLine(t, r, `OK [{"id":"item.rusty_sword","name":"Rusty Sword"}]`)
 }
 
@@ -128,7 +128,7 @@ func TestConcurrentUseAndDrop(t *testing.T) {
 				if strings.HasPrefix(line, "OK ") {
 					ok++
 				}
-				if strings.HasPrefix(line, "ERR not_in_inventory ") {
+				if strings.HasPrefix(line, "ERR 404 ITEM_NOT_IN_INVENTORY ") {
 					fail++
 				}
 			}
@@ -157,7 +157,7 @@ func TestUseAmbiguityFullQueueAndOverflow(t *testing.T) {
 	c := &client{username: "alice", roomID: "loc.square", hp: 30, outbox: make(chan string, 1)}
 	s.itemLocations["item.a"], s.itemLocations["item.b"] = itemLocation{owner: c}, itemLocation{owner: c}
 	s.useItem(c, "Apple", true)
-	if got := <-c.outbox; got != "ERR invalid_arguments USE name matches multiple items; use an item ID" {
+	if got := <-c.outbox; got != "ERR 400 INVALID_ARGUMENTS USE name matches multiple items; use an item ID" {
 		t.Fatal(got)
 	}
 	c.outbox <- "blocked"
@@ -204,7 +204,7 @@ func TestItemLifecycleMixedActions(t *testing.T) {
 		case 2:
 			s.useItem(c, id, true)
 		case 3:
-			s.talk(c, "npc.herbalist", true)
+			s.talkReply(c, "npc.herbalist", true, true)
 		case 4:
 			s.dropInventoryLocked(c) // Disconnect never recreates terminal instances.
 		case 5:

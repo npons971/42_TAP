@@ -52,7 +52,7 @@ The README requires a dedicated "Testing" section demonstrating how multiplayer 
 1. Spawn an item in room (`item.rare_herbs`).
 2. Client A and Client B concurrently issue `TAKE item.rare_herbs` at the exact same millisecond.
 3. Assert that exactly one client receives `OK taken=item.rare_herbs`.
-4. Assert that the second client receives `ERR item_not_found`.
+4. Assert that the second client receives `ERR 404 ITEM_NOT_FOUND`.
 5. Verify total item instance count in the world remains 1.
 
 ### Test Case 3: Mid-Broadcast Abrupt Disconnect
@@ -63,4 +63,4 @@ The README requires a dedicated "Testing" section demonstrating how multiplayer 
 
 ### Test Case 4: Command Flood Throttling
 1. Connect client and fire 50 rapid commands in under 100ms.
-2. Assert server responds with `ERR rate_limited` and records a `WARN ABUSE_FLOOD` log.
+2. Assert server responds with `ERR 429 RATE_LIMITED` and records a `WARN ABUSE_FLOOD` log.

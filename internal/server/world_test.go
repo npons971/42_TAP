@@ -13,7 +13,7 @@ import (
 
 func readWorldReply(t *testing.T, r *bufio.Reader, target any) {
 	t.Helper()
-	line, err := r.ReadString('\n')
+	line, err := readTestLine(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,9 +52,9 @@ func TestFullWorldExploration(t *testing.T) {
 	expectLine(t, r, "OK connected")
 	for _, id := range []string{"item.ancient_key", "item.vigor_potion"} {
 		sendCommand(t, conn, "TAKE "+id)
-		expectLine(t, r, fmt.Sprintf("ERR item_not_found TAKE target %q is not in loc.town_square; use LOOK", id))
+		expectLine(t, r, fmt.Sprintf("ERR 404 ITEM_NOT_FOUND TAKE target %q is not in loc.town_square; use LOOK", id))
 		sendCommand(t, conn, "DROP "+id)
-		expectLine(t, r, fmt.Sprintf("ERR not_in_inventory DROP target %q is not in your inventory; use INVENTORY", id))
+		expectLine(t, r, fmt.Sprintf("ERR 404 ITEM_NOT_IN_INVENTORY DROP target %q is not in your inventory; use INVENTORY", id))
 	}
 	// Includes both loops, underground passages and the optional ruins branch.
 	route := []string{"", "east", "north", "down", "south", "up", "south", "north", "south", "east", "east", "north", "south", "west", "west"}
@@ -70,7 +70,7 @@ func TestFullWorldExploration(t *testing.T) {
 			expectLine(t, r, "OK room="+roomID)
 		}
 		visited[roomID] = true
-		sendCommand(t, conn, "LOOK")
+		sendCommand(t, conn, "LOOK DETAILS")
 		var view struct {
 			Room  roomView         `json:"room"`
 			Items []map[string]any `json:"items"`
@@ -96,7 +96,7 @@ func TestFullWorldExploration(t *testing.T) {
 		for _, npc := range view.NPCs {
 			// Both exact IDs and case-insensitive complete English names work.
 			for _, target := range []string{npc.ID, strings.ToUpper(npc.Name)} {
-				sendCommand(t, conn, "TALK "+target)
+				sendCommand(t, conn, "TALKJSON "+target)
 				var reply struct {
 					NPC      string `json:"npc"`
 					Dialogue string `json:"dialogue"`
@@ -116,13 +116,14 @@ func TestFullWorldExploration(t *testing.T) {
 	sendCommand(t, conn, "TAKE fresh apple")
 	expectLine(t, r, "OK taken=item.apple")
 	expectLine(t, r, "EVT ROOM ITEM TAKE explorer item.apple")
-	sendCommand(t, conn, "INVENTORY")
+	sendCommand(t, conn, "INVENTORY DETAILS")
 	expectLine(t, r, `OK [{"id":"item.apple","name":"Fresh Apple"}]`)
 	sendCommand(t, conn, "DROP item.apple")
 	expectLine(t, r, "OK dropped=item.apple")
 	expectLine(t, r, "EVT ROOM ITEM DROP explorer item.apple")
 	sendCommand(t, conn, "QUIT")
-	if _, err := r.ReadString('\n'); err != io.EOF {
+	expectLine(t, r, "OK bye")
+	if _, err := readTestLine(r); err != io.EOF {
 		t.Fatalf("QUIT must close the connection, got %v", err)
 	}
 }

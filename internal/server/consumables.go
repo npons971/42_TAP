@@ -17,6 +17,9 @@ func (s *Server) useItem(c *client, target string, hasArgs bool) bool {
 	if c.username == "" {
 		return notAuthenticated(c, "USE")
 	}
+	if c.target != "" {
+		return sendError(c, "in_combat", "USE"+" is unavailable in combat; use FLEE")
+	}
 	id, ambiguous := s.resolveItemLocked(c, "DROP", target)
 	if ambiguous {
 		return sendError(c, "invalid_arguments", "USE name matches multiple items; use an item ID")
@@ -37,6 +40,7 @@ func (s *Server) useItem(c *client, target string, hasArgs bool) bool {
 	}
 	s.itemLocations[id] = itemLocation{consumed: true}
 	c.hp = hp
+	s.logger.Info("item consumed", "player", c.username, "item", id, "hp", hp)
 	s.broadcastItemLocked(c.roomID, "USE", c.username, id)
 	return true
 }

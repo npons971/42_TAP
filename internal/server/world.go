@@ -98,6 +98,9 @@ func LoadWorld(path string) (*World, error) {
 		if strings.TrimSpace(npc.Dialogue) == "" {
 			return nil, fmt.Errorf("NPC %q needs dialogue", npc.ID)
 		}
+		if npc.Role == "enemy" && (npc.HP <= 0 || npc.AttackPower <= 0 || !npc.Hostile) {
+			return nil, fmt.Errorf("enemy %q needs positive HP, attack power and hostile=true", npc.ID)
+		}
 		if npc.HP < 0 || npc.MaxHP < 0 || npc.AttackPower < 0 || npc.HP > npc.MaxHP {
 			return nil, fmt.Errorf("NPC %q has invalid HP or attack power", npc.ID)
 		}

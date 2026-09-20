@@ -20,16 +20,21 @@ To track progress across the codebase and identify pending team decisions, every
 ## Documentation Matrix
 
 ### 1. Protocol Specifications (`Commun/protocol/`)
+
+External specification: [RFC 42TAP](protocol/external_rfc.html).
+[Conformance report and extensions](protocol/rfc_conformance.md):
+standard command formats are aligned and checked by dedicated TCP tests.
+
 | Document | Focus | Assigned To | Status |
 |---|---|---|---|
 | [rfc_syntax.md](protocol/rfc_syntax.md) | TCP framing, 4,096-byte limit, replies, events, IDs | Aris (Dev A) & Novanns (Dev B) | `🔵 IN_REVIEW` — Dev A proposal, Dev B review pending |
-| [json_payloads.md](protocol/json_payloads.md) | JSON payloads for `LOOK`, `STATUS`, `WHO`, `INVENTORY`, `QUESTS` | Both | `🔵 IN_REVIEW` — Dev A proposal, Dev B review pending |
+| [json_payloads.md](protocol/json_payloads.md) | Standard JSON payloads and explicit metadata extensions | Both | `🔵 IN_REVIEW` — Dev A proposal, Dev B review pending |
 
 ### 2. Architecture & Concurrency (`Dev_A/architecture/`)
 | Document | Focus | Assigned To | Status |
 |---|---|---|---|
-| [server_architecture.md](../Dev_A/architecture/server_architecture.md) | Dispatcher vs Router, GameState truth, World loader | Aris (Dev A) | `🔴 TO_FILL` |
-| [concurrency_model.md](../Dev_A/architecture/concurrency_model.md) | Goroutines topology, RWMutex, non-blocking broadcasting | Aris (Dev A) | `🟡 IN_PROGRESS` — initial server model implemented |
+| [server_architecture.md](../Dev_A/architecture/server_architecture.md) | Dispatcher vs Router, GameState truth, World loader | Aris (Dev A) | `🔵 IN_REVIEW` — implemented, ready for team review |
+| [concurrency_model.md](../Dev_A/architecture/concurrency_model.md) | Goroutines topology, RWMutex, non-blocking broadcasting | Aris (Dev A) | `🔵 IN_REVIEW` — server gameplay implemented |
 
 ### 3. Server Logging & Security (`Dev_A/logging/`)
 | Document | Focus | Assigned To | Status |
@@ -47,3 +52,5 @@ To track progress across the codebase and identify pending team decisions, every
 |---|---|---|---|
 | [integration_tests.md](testing/integration_tests.md) | Unit testing, Mock TCP concurrency test harnesses, Flood testing | Both | `🟡 IN_PROGRESS` |
 | [peer_evaluation_guide.md](testing/peer_evaluation_guide.md) | Step-by-step 42 peer-evaluation checklist & live code edit preparation | Both | `🔵 IN_REVIEW` |
+
+Server/CLI acceptance matrix: [aris_acceptance.md](testing/aris_acceptance.md).

@@ -1,10 +1,27 @@
 # TAP — Aris (Dev A) : Serveur + CLI
 
-Ce document regroupe les responsabilités et tâches attribuées à **Aris (Dev A)**.  
-Pour les décisions d'équipe, le protocole partagé et l'architecture globale, se référer à [TAP_taches_communes.md](Commun/TAP_taches_communes.md).  
+Ce document regroupe les responsabilités et tâches attribuées à **Aris (Dev A)**.
+Pour les décisions d'équipe, le protocole partagé et l'architecture globale, se référer à [TAP_taches_communes.md](../Commun/TAP_taches_communes.md).
 Pour la partie de Novanns (Dev B), voir [TAP_Novanns_Dev_B.md](../Dev_B/TAP_Novanns_Dev_B.md).
 
 ---
+
+## État de réalisation
+
+La partie serveur et CLI est implémentée : les 15 commandes obligatoires,
+combat au tour par tour avec DEFEND/FLEE, groupes/CHAT GROUP, progression des
+deux quêtes, objets uniques/USE, chargement du monde, logs JSON et détection
+de flood/connexions rapides. Le CLI tourne avec make run-cli et reçoit les
+événements pendant la saisie. Les tests réseau, de concurrence et de terminal
+sont décrits dans [aris_acceptance.md](../Commun/testing/aris_acceptance.md).
+
+Le RFC externe fourni à la racine a été comparé au serveur et les écarts ont
+été corrigés : voir [rfc_conformance.md](../Commun/protocol/rfc_conformance.md).
+Les tests vérifient les trames standard, les événements et les extensions
+explicites. Le backend GUI et les handlers du frontend sont testés et le
+frontend compile. Une session visuelle Wails et les tests avec les clients
+indépendants d'autres groupes restent des validations communes.
+La liste ci-dessous conserve le périmètre de responsabilités.
 
 ## 1. Serveur TCP
 

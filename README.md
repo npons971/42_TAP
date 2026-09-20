@@ -5,18 +5,20 @@ This repository is a work in progress for the 42 TAP multiplayer text adventure.
 ## Current server milestone
 
 The Go TCP server accepts multiple simultaneous connections, sends
-`OK hello proto=42TAP/1` to each client, and supports `CONNECT`, `LOOK`,
-`MOVE`, `CHAT` (`GLOBAL` and `ROOM`), `WHO`, `STATUS`, `TAKE`, `DROP`,
-`INVENTORY`, `TALK`, `USE`, and `QUIT`. It loads Dev B’s complete nine-room world from
+`OK hello proto=1` to each client, and supports `CONNECT`, `LOOK`,
+`MOVE`, `CHAT` (`GLOBAL`, `ROOM` and `GROUP`), `WHO`, `STATUS`, `TAKE`, `DROP`,
+`INVENTORY`, `TALK`, `ATTACK`, `QUEST`, `QUESTS`, `GROUP`, `USE`,
+`DEFEND`, `FLEE`, and `QUIT`. It loads Dev B’s complete nine-room world from
 [`data/world.json`](data/world.json): ten unique objects, eight NPCs and two
-quest definitions. Combat and full quest progression are future milestones; delivery and unique
-reward allocation are implemented.
-`CHAT GROUP` will become available when groups are implemented.
-The proposed wire contract is in [the protocol documentation](docs/Commun/protocol/rfc_syntax.md).
+quest definitions. The standard command signatures, replies and events follow
+[the external RFC](docs/Commun/protocol/external_rfc.html), with documented
+USE, DEFEND, FLEE and metadata extensions. GROUP supports CREATE, INVITE,
+JOIN by leader username, LEAVE and chat across rooms. See the
+[conformance report](docs/Commun/protocol/rfc_conformance.md).
+The implemented wire contract is in [the protocol documentation](docs/Commun/protocol/rfc_syntax.md).
 Errors use `ERR <code> <specific message>`. For example, `CONNECT ARIS` explains
 the lowercase username rule, `MOVE down` lists the current room's available
-exits, and `WHO extra` says that `WHO` takes no arguments. Recognized
-commands still under development return `ERR not_implemented`.
+exits, and `WHO extra` says that `WHO` takes no arguments. Unknown verbs return `ERR 400 UNKNOWN_COMMAND`.
 
 Go 1.22 or newer is required. Server Makefile targets provision the local Go
 SDK if needed and use repository-local dependency and build caches. Run the
@@ -32,8 +34,8 @@ To use another listen address:
 make run-server SERVER_ADDR=127.0.0.1:4243
 ```
 
-Usernames must be 3–20 ASCII characters, start with a lowercase letter, and
-contain only lowercase letters, digits, or underscores. For example,
+Usernames must be 3–20 Unicode codepoints, start with a lowercase letter, and
+contain only lowercase Unicode letters, decimal digits, or underscores. For example,
 `CONNECT aris` is valid; `CONNECT ARIS` is rejected. After a failed `CONNECT`,
 you can retry on the same connection. `QUIT` closes that connection.
 
@@ -69,8 +71,7 @@ JSON escapes it as `\n`, keeping each response on one TCP line.
 
 World fields:
 
-- `metadata`: name and version; `start`: connection room; `respawn`: future
-  defeat destination, defaulting to `start`. Both rooms must exist.
+- `metadata`: name and version; `start`: connection room; `respawn`: defeat destination, defaulting to `start`. Both rooms must exist.
 - `locations`: map of room IDs with name, description, exits and `items`/`npcs`
   arrays containing unique instance IDs. NPC spawn counts are represented by
   explicit IDs, one placed instance per NPC.
@@ -82,16 +83,15 @@ World fields:
   dropped or displayed in `LOOK`/`INVENTORY`. Every other item must be placed
   in exactly one room; a reserved item cannot also be placed in a room.
 - Item attributes (type, description, healing, damage and defense), NPC
-  combat attributes, and `quests` definitions are preserved for future
-  engines. Consumable healing and delivery rewards are active; combat and
-  full quest progression are pending.
+  combat attributes, and `quests` definitions are preserved for the
+  implemented combat, healing and quest engines.
 
 The loader rejects invalid IDs, names, roles, dialogues, references,
 duplicate instances and conflicting or missing placements. Room exits may
 be directed: the square’s `west` exit leads to the dark alley, whose `south`
 exit returns to the square. All nine rooms are reachable from the square.
-`LOOK` retains descriptors `{id,name,obtainable}` for items and
-`{id,name,role}` for NPCs; `INVENTORY` retains `{id,name}`. The 4,096-byte wire
+`LOOK DETAILS` returns descriptors `{id,name,obtainable}` for items and
+`{id,name,role}` for NPCs; `INVENTORY DETAILS` returns `{id,name}`. The 4,096-byte wire
 limit, including final LF, is unchanged.
 
 Each physical object has one location: a room, a player's inventory or the
@@ -119,9 +119,9 @@ make test-server
 
 `USE <item_id or full display name>` consumes an owned consumable and restores
 its configured `heal_value`, capped at 100 HP. Apple restores 10, ale 15,
-potion 100. Example: `OK used=item.apple hp=85/100`. At full HP, `ERR health_full`
-keeps the object. Unknown/unowned items return `ERR not_in_inventory`; weapons,
-scenery, tools and quest ingredients cannot be consumed (`ERR item_not_usable`).
+potion 100. Example: `OK used=item.apple hp=85/100`. At full HP, `ERR 409 HEALTH_FULL`
+keeps the object. Unknown/unowned items return `ERR 404 ITEM_NOT_IN_INVENTORY`; weapons,
+scenery, tools and quest ingredients cannot be consumed (`ERR 405 ITEM_NOT_USABLE`).
 Names and whitespace rules match TAKE/DROP. Healing is atomic with consumption.
 
 Try the delivery from the square:
@@ -138,14 +138,13 @@ USE item.vigor_potion
 
 TALK consumes the herbs, transfers the unique potion from reserve and restores
 HP to 100. The final USE therefore reports full health and keeps the potion.
-Combat will later provide ordinary ways to lose HP; tests also exercise USE
-with injured players. No client command sets arbitrary HP or grants rewards.
+Combat provides ordinary ways to lose HP; tests also exercise USE with
+injured players. No client command sets arbitrary HP or grants rewards.
 
-The first eligible delivery wins globally for this server lifetime. No quest
-acceptance is required at this stage: ownership and presence at the giver
-prove the delivery. Repeating TALK as the winning username produces an
+The first eligible delivery wins globally for this server lifetime. TALK accepts the quest; if ownership already proves the objective, the same
+TALK completes the delivery. Repeating TALK as the winning username produces an
 already-complete private dialogue without another reward. Other players
-receive `ERR reward_unavailable` once the reward has been awarded. The herbs
+receive `ERR 406 NO_QUEST_AVAILABLE` once the reward has been awarded. The herbs
 stay consumed and do not respawn; players can share unconsumed objects via
 DROP/TAKE. A reward may be transferred, dropped or used, but never allocated
 a second time. No player-specific copies are created. Restart resets both
@@ -156,5 +155,118 @@ Recipients include the actor; the actor's OK is queued first, then DELIVER,
 then REWARD for a successful delivery. Clients refresh inventory/status after
 these events. Failed or repeated actions emit no item events. A full outgoing
 queue or oversized dialogue cannot consume ingredients or allocate rewards.
-The bandit reward allocator is ready; its actual eligibility requires the
-future combat/quest engine and cannot be triggered by TALK today.
+The bandit bounty requires a real recorded victory; TALK to its captain then
+grants the key. Victories and quest acceptance survive reconnect by username.
+
+## CLI client
+
+```sh
+make run-cli
+make run-cli CLI_ADDR=127.0.0.1:4243
+make build-cli
+```
+
+The CLI uses direct protocol commands and displays asynchronous replies/events.
+Linux terminals preserve partially typed UTF-8 input when an event arrives;
+backspace and Ctrl-U edit input, Ctrl-C/Ctrl-D quit. Pipes and other platforms
+use plain line mode. QUIT/EOF/cancellation close the client and restore terminal
+settings. Commands, replies and timeouts are bounded.
+
+## Combat, quests and groups
+
+ATTACK accepts a living local hostile NPC ID or full name. One player engages
+one enemy; a second attacker receives target_busy. Each ATTACK is one turn:
+player damage **12 + strongest carried weapon bonus**, then a surviving enemy
+counterattacks for **max(1, attack_power - strongest armor bonus)**. Bonuses do
+not stack. Deterministic damage makes balancing and outcomes reproducible.
+DEFEND halves the counterattack, rounded down. FLEE [direction] succeeds 70%
+of the time; without a direction it selects the first sorted exit. Failed
+fleeing costs a counterattack. MOVE/TAKE/DROP/TALK/USE/QUEST require leaving combat.
+Read commands (including QUESTINFO/QUESTS), chat and groups stay usable. STATUS reflects actual HP and target.
+
+At zero HP, the player respawns in world.respawn with **30 HP**, keeps inventory
+and leaves combat. Disconnect/flee releases the enemy without resetting its HP.
+A defeated enemy disappears until restart; the finishing player's victory is
+recorded for quests. The single engagement prevents duplicated turns and kills.
+
+TALK at a giver accepts its quest or completes it if the objective is already
+met. QUESTINFO/QUESTS DETAILS report NOT_STARTED, IN_PROGRESS, OBJECTIVES_MET, COMPLETED or
+UNAVAILABLE. Dropping an ingredient makes its objective incomplete again.
+The bandit requires a recorded final blow followed by a report to the captain.
+A pre-acceptance victory also counts. All unique rewards remain world-wide;
+acceptance/victory proof survives reconnect by username, but not server restart.
+CONNECT has no password, so usernames are not secure persistent identities.
+
+GROUP CREATE returns OK group=<generated-id>. GROUP INVITE username notifies
+the invitee with EVT GROUP INVITE <leader>; GROUP JOIN <leader-username> joins
+that leader's group and returns OK group=<id>. GROUP LEAVE returns OK. JOIN
+and LEAVE events update members; disconnect leaves the group. If its leader
+leaves, the first remaining username in sorted order becomes leader and an
+extension EVT GROUP LEADER announces it. Empty groups are deleted. Invitations
+are informational: the RFC does not require invitation-only membership.
+
+QUEST <local-npc-ID-or-name> accepts a quest and returns quest_id, description,
+reward item ID and status (available on first acceptance, active on repeats).
+QUESTS lists only the player's active/completed quests, with progress 0/1 or
+1/1 while active. A started quest becomes unavailable if another player claims
+its unique reward. TALK at the giver still accepts or completes quests for the
+existing gameplay flow. QUESTINFO <quest-id> and QUESTS DETAILS expose read-only
+definitions and the internal states listed above.
+
+## RFC formats and extensions
+
+WHO returns OK players=<count>. LOOK items/npcs and INVENTORY contain ID arrays.
+TALK returns dialogue text on one line. QUIT sends OK bye before closing.
+STATUS includes hp, max_hp and status (healthy, injured or combat); ATTACK
+includes attacker_hp, target_hp, damage and status, plus documented game details.
+Verbs are case-insensitive. CONNECT ARIS remains invalid under our lowercase
+username policy, while CONNECT élise is accepted.
+
+The GUI uses LOOK DETAILS, INVENTORY DETAILS and TALKJSON to retain display
+names, item flags and ordered dialogue lines without shipping a local world
+catalogue. These are explicit extensions; default commands use RFC formats.
+Responses are correlated with outgoing commands so an empty QUESTS does not
+clear inventory. STATS events update the authenticated player count.
+
+We retain a 4,096-byte line limit including LF instead of the RFC's recommended
+1,024 bytes, to fit room metadata and NPC dialogues. Oversized requests are
+drained and rejected; oversized responses fail without committing an action.
+We follow LF framing, as specified in the RFC transport/general grammar, despite
+a contradictory CRLF production in its CONNECT example. Limits are 128 active
+TCP sessions and 32 inventory slots; fetch rewards can replace an ingredient
+at capacity, while other rewards require a free slot. A refused reward remains
+available for retry after DROP.
+
+## Logging and robustness
+
+Structured JSON logs include timestamp, level, connections, commands/parameters,
+all written replies/events and error codes, state changes, NPC interactions,
+combat and quest progress. Use `.build/tap-server -log-file server.log` to append
+to a file instead of stdout. Command flooding is limited to a 128-command burst
+with 20/s refill, then rate_limited and disconnect. More than five connections
+from an IP in two seconds produces a warning; shared school IPs are not banned.
+IP tracking is bounded. Per-client queues and write deadlines prevent an idle
+receiver from blocking other sessions. SIGINT/SIGTERM stop the server cleanly.
+
+The shared mutex protects all state; typed handlers check and queue their OK
+before committing mutations. Events are queued after the actor's reply, with
+network writes isolated in the writer goroutine. The protocol contract and its
+extensions are documented locally; the external RFC is covered by dedicated TCP tests that assert standard frames
+and event order. The [conformance report](docs/Commun/protocol/rfc_conformance.md)
+records the migration and justified extensions. Testing against another team’s
+independent client remains an external interoperability check.
+
+## Verification
+
+```sh
+make test
+make build-server build-cli
+make test-gui
+GOPATH="$PWD/.go-work" GOCACHE="$PWD/.go-cache" ./go vet ./...
+```
+
+Tests cover complete bounty/delivery runs, quest status/reconnect, group chat
+isolation across rooms, concurrent enemy/group/reward contention, defend/flee,
+respawn, transactional failures, UTF-8/line bounds, logs/abuse detection and CLI
+async input/cancellation. A real CLI-to-server test completes the bounty and
+receives the key. See docs/Commun/testing/aris_acceptance.md for the test matrix.
