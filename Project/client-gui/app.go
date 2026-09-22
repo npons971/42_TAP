@@ -23,6 +23,9 @@ type App struct {
 	connMu    sync.RWMutex
 	connected bool
 	username  string
+
+	// OnEvent is an optional callback invoked on every server event (for integration tests/headless mode)
+	OnEvent func(eventType, payload string)
 }
 
 // NewApp creates a new App instance.
@@ -83,6 +86,9 @@ func (a *App) Connect(host string, port int, username string) error {
 
 // Disconnect gracefully terminates the TCP connection.
 func (a *App) Disconnect() error {
+	// Try sending QUIT if still alive (sendRaw acquires RLock)
+	_ = a.sendRaw("QUIT\n")
+
 	a.connMu.Lock()
 	defer a.connMu.Unlock()
 
@@ -90,14 +96,16 @@ func (a *App) Disconnect() error {
 		return nil
 	}
 
-	// Try sending QUIT if still alive
-	_ = a.sendRaw("QUIT\n")
-
 	err := a.conn.Close()
 	a.conn = nil
+	a.reader = nil
+	a.writer = nil
 	a.connected = false
 	a.username = ""
 
+	if a.OnEvent != nil {
+		a.OnEvent("disconnected", "Client disconnected")
+	}
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "disconnected", "Client disconnected")
 	}
@@ -214,6 +222,9 @@ func (a *App) listenServer() {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err != io.EOF && !strings.Contains(err.Error(), "use of closed network connection") {
+				if a.OnEvent != nil {
+					a.OnEvent("server_error", err.Error())
+				}
 				if a.ctx != nil {
 					runtime.EventsEmit(a.ctx, "server_error", err.Error())
 				}
@@ -221,8 +232,13 @@ func (a *App) listenServer() {
 			a.connMu.Lock()
 			a.connected = false
 			a.conn = nil
+			a.reader = nil
+			a.writer = nil
 			a.connMu.Unlock()
 
+			if a.OnEvent != nil {
+				a.OnEvent("disconnected", "Connection closed by server")
+			}
 			if a.ctx != nil {
 				runtime.EventsEmit(a.ctx, "disconnected", "Connection closed by server")
 			}
@@ -234,24 +250,40 @@ func (a *App) listenServer() {
 			continue
 		}
 
-		if a.ctx == nil {
-			continue
-		}
-
 		// Emit raw message for general logging
-		runtime.EventsEmit(a.ctx, "raw_message", line)
+		if a.OnEvent != nil {
+			a.OnEvent("raw_message", line)
+		}
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "raw_message", line)
+		}
 
 		// Typed event emission for reactive UI updates
 		switch {
 		case strings.HasPrefix(line, "OK"):
 			payload := strings.TrimSpace(strings.TrimPrefix(line, "OK"))
-			runtime.EventsEmit(a.ctx, "server_ok", payload)
+			if a.OnEvent != nil {
+				a.OnEvent("server_ok", payload)
+			}
+			if a.ctx != nil {
+				runtime.EventsEmit(a.ctx, "server_ok", payload)
+			}
 		case strings.HasPrefix(line, "ERR"):
 			payload := strings.TrimSpace(strings.TrimPrefix(line, "ERR"))
-			runtime.EventsEmit(a.ctx, "server_err", payload)
+			if a.OnEvent != nil {
+				a.OnEvent("server_err", payload)
+			}
+			if a.ctx != nil {
+				runtime.EventsEmit(a.ctx, "server_err", payload)
+			}
 		case strings.HasPrefix(line, "EVT"):
 			payload := strings.TrimSpace(strings.TrimPrefix(line, "EVT"))
-			runtime.EventsEmit(a.ctx, "server_evt", payload)
+			if a.OnEvent != nil {
+				a.OnEvent("server_evt", payload)
+			}
+			if a.ctx != nil {
+				runtime.EventsEmit(a.ctx, "server_evt", payload)
+			}
 		}
 	}
 }

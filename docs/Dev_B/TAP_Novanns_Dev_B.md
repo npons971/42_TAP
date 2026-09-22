@@ -145,12 +145,12 @@ Créer :
 
 ## Ordre de développement recommandé (Planning Novanns)
 
-- **Phase 1 — Cadrage d'équipe** : lecture RFC, décision des structures, format JSON/YAML, conventions Git, IDs.
-- **Phase 2 — Prototypage** : squelette initial du monde, maquette / prototype de la GUI.
-- **Phase 3 — Première intégration** : connexion de la GUI au serveur d'Aris (`CONNECT alice` -> `LOOK` -> `MOVE north` -> mise à jour de l'affichage).
-- **Phase 4 — Enrichissement GUI & Monde** : affichage/interaction des objets, inventaire, NPC, dialogues, commandes sociales (`WHO`, `GROUP`).
-- **Phase 5 — Intégration Combat & Quêtes** : design narratif des quêtes, équilibrage des ennemis, interface de combat et d'affichage des quêtes.
-- **Phase 6 — Validation & Finitions UX** : tests multijoueur via l'interface graphique, gestion propre des déconnexions côté client.
+- **Phase 1 — Cadrage d'équipe** `🟢 VALIDÉ` : lecture RFC, décision des structures, format JSON/YAML, conventions Git, IDs.
+- **Phase 2 — Prototypage** `🟢 VALIDÉ` : squelette initial du monde, maquette / prototype de la GUI Wails v2 + Svelte.
+- **Phase 3 — Première intégration** `🟢 VALIDÉ` : connexion de la GUI au serveur d'Aris (`CONNECT alice` -> `LOOK` -> `MOVE north` -> mise à jour de l'affichage), harnais de test d'intégration `app_test.go`.
+- **Phase 4 — Enrichissement GUI & Monde** `🟢 VALIDÉ` : déploiement du monde complet (9 salles, 2 boucles, 2 branches), affichage/interaction des objets, inventaire, PNJ, dialogues, commandes sociales (`WHO`, `GROUP`), noms lisibles des sorties.
+- **Phase 5 — Intégration Combat & Quêtes** `🟢 VALIDÉ` : design narratif des quêtes dans `world.yaml`/`world.json`, widget `QUEST TRACKER` dans l'UI, barre de contrôle du combat (`ATTACK`, `DEFEND`, `FLEE`).
+- **Phase 6 — Validation & Finitions UX** `🟡 EN COURS` : tests multijoueur via l'interface graphique, gestion robuste des déconnexions/reconnexions.
 - **Phase 7 — Finalisation** : rédaction des sections du README, lint, nettoyage du code, tests finaux, préparation à l'évaluation.
 
 ---
