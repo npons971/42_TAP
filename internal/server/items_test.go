@@ -15,7 +15,7 @@ import (
 
 func expectRoomItems(t *testing.T, reader *bufio.Reader, ids []string) {
 	t.Helper()
-	line, err := reader.ReadString('\n')
+	line, err := readTestLine(reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func expectRoomItems(t *testing.T, reader *bufio.Reader, ids []string) {
 }
 
 func TestUniqueItemsAcrossClientsAndDisconnect(t *testing.T) {
-	world, err := LoadWorld("../../data/world.json")
+	world, err := LoadWorld("testdata/two_rooms.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,36 +46,36 @@ func TestUniqueItemsAcrossClientsAndDisconnect(t *testing.T) {
 	defer func() { cancel(); <-done }()
 	alice, ar := dialTestClient(t, addr)
 	bob, br := dialTestClient(t, addr)
-	sendCommand(t, alice, "INVENTORY")
-	expectLine(t, ar, "ERR not_authenticated Send CONNECT <username> before INVENTORY")
+	sendCommand(t, alice, "INVENTORY DETAILS")
+	expectLine(t, ar, "ERR 403 NOT_AUTHENTICATED Send CONNECT <username> before INVENTORY")
 	sendCommand(t, alice, "CONNECT alice")
 	expectLine(t, ar, "OK connected")
 	sendCommand(t, bob, "CONNECT bob")
 	expectLine(t, br, "OK connected")
 	expectLine(t, ar, "EVT ROOM PRESENCE ENTER bob")
-	sendCommand(t, alice, "LOOK")
+	sendCommand(t, alice, "LOOK DETAILS")
 	expectRoomItems(t, ar, []string{"item.apple", "item.fountain"})
-	sendCommand(t, alice, "INVENTORY")
+	sendCommand(t, alice, "INVENTORY DETAILS")
 	expectLine(t, ar, "OK []")
 	sendCommand(t, alice, "TAKE")
-	expectLine(t, ar, "ERR invalid_arguments Usage: TAKE <item_id or full display name>")
+	expectLine(t, ar, "ERR 400 INVALID_ARGUMENTS Usage: TAKE <item_id or full display name>")
 	sendCommand(t, alice, "TAKE pomme fraîche")
 	expectLine(t, ar, "OK taken=item.apple")
 	expectLine(t, ar, "EVT ROOM ITEM TAKE alice item.apple")
 	expectLine(t, br, "EVT ROOM ITEM TAKE alice item.apple")
-	sendCommand(t, alice, "INVENTORY")
+	sendCommand(t, alice, "INVENTORY DETAILS")
 	expectLine(t, ar, `OK [{"id":"item.apple","name":"Pomme fraîche"}]`)
 	sendCommand(t, bob, "TAKE item.apple")
-	expectLine(t, br, `ERR item_not_found TAKE target "item.apple" is not in loc.town_square; use LOOK`)
+	expectLine(t, br, `ERR 404 ITEM_NOT_FOUND TAKE target "item.apple" is not in loc.town_square; use LOOK`)
 	sendCommand(t, alice, "TAKE item.fountain")
-	expectLine(t, ar, "ERR item_not_obtainable Item item.fountain cannot be picked up with TAKE")
+	expectLine(t, ar, "ERR 405 ITEM_NOT_OBTAINABLE Item item.fountain cannot be picked up with TAKE")
 	sendCommand(t, bob, "DROP item.apple")
-	expectLine(t, br, `ERR not_in_inventory DROP target "item.apple" is not in your inventory; use INVENTORY`)
+	expectLine(t, br, `ERR 404 ITEM_NOT_IN_INVENTORY DROP target "item.apple" is not in your inventory; use INVENTORY`)
 	sendCommand(t, alice, "DROP POMME FRAÎCHE")
 	expectLine(t, ar, "OK dropped=item.apple")
 	expectLine(t, ar, "EVT ROOM ITEM DROP alice item.apple")
 	expectLine(t, br, "EVT ROOM ITEM DROP alice item.apple")
-	sendCommand(t, alice, "INVENTORY")
+	sendCommand(t, alice, "INVENTORY DETAILS")
 	expectLine(t, ar, "OK []")
 	sendCommand(t, bob, "TAKE item.apple")
 	expectLine(t, br, "OK taken=item.apple")
@@ -84,7 +84,7 @@ func TestUniqueItemsAcrossClientsAndDisconnect(t *testing.T) {
 	_ = bob.Close()
 	expectLine(t, ar, "EVT ROOM ITEM DROP bob item.apple")
 	expectLine(t, ar, "EVT ROOM PRESENCE LEAVE bob")
-	sendCommand(t, alice, "LOOK")
+	sendCommand(t, alice, "LOOK DETAILS")
 	expectRoomItems(t, ar, []string{"item.apple", "item.fountain"})
 	sendCommand(t, alice, "TAKE item.apple")
 	expectLine(t, ar, "OK taken=item.apple")
@@ -94,10 +94,10 @@ func TestUniqueItemsAcrossClientsAndDisconnect(t *testing.T) {
 	sendCommand(t, alice, "DROP item.apple")
 	expectLine(t, ar, "OK dropped=item.apple")
 	expectLine(t, ar, "EVT ROOM ITEM DROP alice item.apple")
-	sendCommand(t, alice, "LOOK")
+	sendCommand(t, alice, "LOOK DETAILS")
 	expectRoomItems(t, ar, []string{"item.ancient_key", "item.apple", "item.rusty_sword"})
 	sendCommand(t, alice, "DROP item.apple")
-	expectLine(t, ar, `ERR not_in_inventory DROP target "item.apple" is not in your inventory; use INVENTORY`)
+	expectLine(t, ar, `ERR 404 ITEM_NOT_IN_INVENTORY DROP target "item.apple" is not in your inventory; use INVENTORY`)
 }
 
 func TestConcurrentTakeHasExactlyOneOwner(t *testing.T) {
@@ -112,7 +112,7 @@ func TestConcurrentTakeHasExactlyOneOwner(t *testing.T) {
 	bob := &client{username: "bob", roomID: "loc.square", outbox: make(chan string, 16)}
 	s.players["alice"], s.players["bob"] = alice, bob
 	s.transferItem(alice, "TAKE", "pomme", true)
-	if got := <-alice.outbox; got != "ERR invalid_arguments TAKE name matches multiple items; use an item ID" {
+	if got := <-alice.outbox; got != "ERR 400 INVALID_ARGUMENTS TAKE name matches multiple items; use an item ID" {
 		t.Fatalf("ambiguous name: %s", got)
 	}
 	start := make(chan struct{})
@@ -130,7 +130,7 @@ func TestConcurrentTakeHasExactlyOneOwner(t *testing.T) {
 			if strings.HasPrefix(message, "OK taken=") {
 				successes++
 			}
-			if strings.HasPrefix(message, "ERR item_not_found ") {
+			if strings.HasPrefix(message, "ERR 404 ITEM_NOT_FOUND ") {
 				failures++
 			}
 		}

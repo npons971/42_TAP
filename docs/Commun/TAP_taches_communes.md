@@ -46,20 +46,28 @@ Le CLI et la GUI ne doivent pas maintenir leur propre version indépendante du m
 
 ### 1. Format du protocole
 
-La proposition précise du Dev A est consignée dans [rfc_syntax.md](protocol/rfc_syntax.md) et [json_payloads.md](protocol/json_payloads.md), au statut `🔵 IN_REVIEW` jusqu'à la relecture du Dev B et la vérification de la RFC jointe au sujet. Elle fixe les réponses `OK`/`ERR`, les événements `EVT`, une limite de 4 096 octets par ligne, les tableaux d'objets détaillés de `LOOK`/`INVENTORY` et les conventions d'identifiants.
+Le contrat implémenté est consigné dans [rfc_syntax.md](protocol/rfc_syntax.md)
+et [json_payloads.md](protocol/json_payloads.md). Le RFC externe fourni dans
+rfc.tar.gz a été intégré et les écarts ont été corrigés :
+[rfc_conformance.md](protocol/rfc_conformance.md).
 
-Points à vérifier ensemble avant de considérer le contrat validé :
+- Salutation `OK hello proto=1`, erreurs numériques, QUIT avec `OK bye`.
+- LOOK et INVENTORY standards renvoient des IDs ; les versions DETAILS
+  fournissent les descripteurs utiles au GUI en extension.
+- GROUP utilise un ID généré et JOIN cible le chef ; INVITE et les événements
+  de membres ainsi que STATS sont implémentés.
+- QUEST demande une quête à un PNJ ; QUESTS liste les quêtes du joueur.
+- Combat, quêtes et limite de 4 096 octets sont justifiés dans le README.
 
-- compatibilité de `LOOK` et `INVENTORY` détaillés avec la RFC jointe ;
-- chaîne exacte du message de bienvenue `proto=42TAP/1` ;
-- formats encore ouverts pour le résultat de `ATTACK` et les événements de combat et de quête.
+Une relecture commune et les tests avec les clients d'autres équipes restent
+utiles pour vérifier l'interopérabilité en situation réelle.
 
 Exemple :
 
 ```text
 C: MOVE north
 S: OK room=loc.tavern
-S: EVT ROOM PRESENCE ENTER alice
+S (aux autres occupants de la destination): EVT ROOM PRESENCE ENTER alice
 ```
 
 ### 2. Structures communes

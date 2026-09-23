@@ -14,3 +14,17 @@ to this in your browser, and you can call your Go code from devtools.
 ## Building
 
 To build a redistributable, production mode package, use `wails build`.
+
+## RFC protocol compatibility
+
+The backend uses LOOK DETAILS, INVENTORY DETAILS and TALKJSON for descriptive
+metadata; standard WHO, QUEST <npc> and QUESTS use RFC formats. Replies are
+correlated with sent commands so empty quest lists do not clear inventory.
+The default username is lowercase. Numeric errors and STATS/GROUP events are
+handled. Backend networking tests can run independently of GTK:
+
+```sh
+GOPATH="$PWD/../../.go-work" GOCACHE="$PWD/../../.go-cache" ../../go test -race app.go app_test.go
+cd frontend
+../../../npm run build
+```
