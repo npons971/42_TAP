@@ -2,6 +2,21 @@
 
 This repository is a work in progress for the 42 TAP multiplayer text adventure.
 
+## Play with the GUI
+
+```sh
+make gui
+```
+
+The command prepares repository-local tools, builds and opens the desktop client,
+and starts a local TAP server when needed. Choose a username and click
+**CONNECT & PLAY**. Closing the GUI stops the server started by the launcher;
+an existing server remains running. Use `make dev-gui` for live development,
+`make build-gui` to compile, and `make check-gui` to diagnose local dependencies.
+For a remote server: `make gui GUI_HOST=192.168.1.10 GUI_PORT=4242 GUI_SERVER=off`.
+See the [GUI guide](Project/client-gui/README.md) for platform requirements,
+installation and gameplay controls. Run `make` for command help.
+
 ## Current server milestone
 
 The Go TCP server accepts multiple simultaneous connections, sends

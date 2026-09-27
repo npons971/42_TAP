@@ -5,38 +5,41 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
 type eventItem struct {
 	evtType string
 	payload string
 }
 
-func ensureServer(t *testing.T) {
+func ensureServer(t *testing.T) *net.TCPAddr {
 	t.Helper()
-	conn, err := net.DialTimeout("tcp", "127.0.0.1:4242", 200*time.Millisecond)
-	if err == nil {
-		_ = conn.Close()
-		return
-	}
 	repoRoot, err := filepath.Abs("../../")
 	if err != nil {
 		t.Fatalf("Failed to get repo root: %v", err)
 	}
-	serverBin := filepath.Join(repoRoot, ".build", "tap-server")
+	serverBin := filepath.Join(t.TempDir(), "tap-server")
 	goBin := filepath.Join(repoRoot, "go")
 	buildCmd := exec.Command(goBin, "build", "-o", serverBin, "./cmd/server")
 	buildCmd.Dir = repoRoot
+	buildCmd.Env = append(os.Environ(), "GOPATH="+filepath.Join(repoRoot, ".go-work"), "GOCACHE="+filepath.Join(repoRoot, ".go-cache"))
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("Failed to build server: %v (%s)", err, string(out))
 	}
-	cmd := exec.Command(serverBin, "-addr", "127.0.0.1:4242")
+	cmd := exec.Command(serverBin, "-addr", "127.0.0.1:0")
 	cmd.Dir = repoRoot
+	cmd.Stderr = os.Stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("Failed to auto-start server: %v", err)
 	}
@@ -47,16 +50,34 @@ func ensureServer(t *testing.T) {
 		}
 	})
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", "127.0.0.1:4242", 100*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			return
+	ready := make(chan string, 1)
+	finished := make(chan error, 1)
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			var entry struct {
+				Message string `json:"msg"`
+				Address string `json:"addr"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &entry) == nil && entry.Message == "server listening" {
+				ready <- entry.Address
+			}
 		}
-		time.Sleep(50 * time.Millisecond)
+		finished <- scanner.Err()
+	}()
+	select {
+	case address := <-ready:
+		addr, err := net.ResolveTCPAddr("tcp", address)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return addr
+	case err := <-finished:
+		t.Fatalf("Server exited before readiness: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Server did not become ready within 5 seconds")
 	}
-	t.Fatalf("Server did not become ready within 5 seconds")
+	return nil
 }
 
 // waitForEvent waits for a specific event type and condition
@@ -77,19 +98,13 @@ func waitForEvent(t *testing.T, ch <-chan eventItem, timeout time.Duration, matc
 }
 
 func TestAppLiveServerIntegration(t *testing.T) {
-	ensureServer(t)
+	addr := ensureServer(t)
 
 	app := NewApp()
 
 	// Channel to collect events via OnEvent hook
 	eventsChan := make(chan eventItem, 100)
-	var mu sync.Mutex
-	allEvents := make([]eventItem, 0)
-
 	app.OnEvent = func(evtType, payload string) {
-		mu.Lock()
-		allEvents = append(allEvents, eventItem{evtType: evtType, payload: payload})
-		mu.Unlock()
 		select {
 		case eventsChan <- eventItem{evtType: evtType, payload: payload}:
 		default:
@@ -98,7 +113,7 @@ func TestAppLiveServerIntegration(t *testing.T) {
 
 	// 1. Connect
 	testUser := fmt.Sprintf("test_gui_%d", time.Now().Unix()%10000)
-	if err := app.Connect("127.0.0.1", 4242, testUser); err != nil {
+	if err := app.Connect("127.0.0.1", addr.Port, testUser); err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
 	defer func() {
@@ -246,7 +261,7 @@ func TestAppLiveServerIntegration(t *testing.T) {
 }
 
 func TestAppMultiClientPresenceAndChat(t *testing.T) {
-	ensureServer(t)
+	addr := ensureServer(t)
 
 	// Client 1: novanns
 	app1 := NewApp()
@@ -258,7 +273,7 @@ func TestAppMultiClientPresenceAndChat(t *testing.T) {
 		}
 	}
 	user1 := fmt.Sprintf("u1_%d", time.Now().Unix()%10000)
-	if err := app1.Connect("127.0.0.1", 4242, user1); err != nil {
+	if err := app1.Connect("127.0.0.1", addr.Port, user1); err != nil {
 		t.Fatalf("Client 1 connect failed: %v", err)
 	}
 	defer func() { _ = app1.Disconnect() }()
@@ -276,7 +291,7 @@ func TestAppMultiClientPresenceAndChat(t *testing.T) {
 		}
 	}
 	user2 := fmt.Sprintf("u2_%d", time.Now().Unix()%10000)
-	if err := app2.Connect("127.0.0.1", 4242, user2); err != nil {
+	if err := app2.Connect("127.0.0.1", addr.Port, user2); err != nil {
 		t.Fatalf("Client 2 connect failed: %v", err)
 	}
 	defer func() { _ = app2.Disconnect() }()
@@ -336,7 +351,11 @@ func TestGUIProtocolCommandsAndDisconnect(t *testing.T) {
 				done <- nil
 				return
 			}
-			fmt.Fprintln(conn, "OK")
+			if strings.HasPrefix(line, "CONNECT ") {
+				fmt.Fprintln(conn, "OK connected")
+			} else {
+				fmt.Fprintln(conn, "OK")
+			}
 			fmt.Fprintln(conn, "EVT STATS players=1")
 		}
 		done <- r.Err()
@@ -447,5 +466,281 @@ func TestGUIConcurrentConnect(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("connection leaked")
+	}
+}
+
+func TestGUIConnectionValidation(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	var accepted atomic.Int32
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			accepted.Add(1)
+			fmt.Fprintln(conn, "OK hello proto=1")
+			bufio.NewReader(conn).ReadString('\n')
+			fmt.Fprintln(conn, "OK connected")
+			conn.Close()
+		}
+	}()
+	port := listener.Addr().(*net.TCPAddr).Port
+	cases := []struct {
+		name, host, username string
+		port                 int
+	}{
+		{"empty username", "127.0.0.1", "", port},
+		{"uppercase unicode username", "127.0.0.1", "Élise", port},
+		{"uppercase username", "127.0.0.1", "Alice", port},
+		{"short username", "127.0.0.1", "ab", port},
+		{"digit prefix", "127.0.0.1", "1alice", port},
+		{"multiple words", "127.0.0.1", "alice bob", port},
+		{"newline injection", "127.0.0.1", "alice\nQUIT", port},
+		{"carriage return injection", "127.0.0.1", "alice\rQUIT", port},
+		{"long username", "127.0.0.1", strings.Repeat("a", 21), port},
+		{"empty host", "", "alice", port},
+		{"blank host", "   ", "alice", port},
+		{"zero port", "127.0.0.1", "alice", 0},
+		{"negative port", "127.0.0.1", "alice", -1},
+		{"large port", "127.0.0.1", "alice", 65536},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := NewApp()
+			if err := app.Connect(tc.host, tc.port, tc.username); err == nil {
+				app.Disconnect()
+				t.Fatal("invalid connection arguments accepted")
+			}
+			if app.IsConnected() || app.GetUsername() != "" {
+				t.Fatal("invalid arguments left an active session")
+			}
+		})
+	}
+	listener.Close()
+	<-done
+	if got := accepted.Load(); got != 0 {
+		t.Fatalf("invalid arguments opened %d TCP connections", got)
+	}
+}
+
+func TestGUIHandshakeTimeout(t *testing.T) {
+	for _, stage := range []string{"greeting", "registration"} {
+		t.Run(stage, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			stop := make(chan struct{})
+			defer close(stop)
+			go func() {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				if stage == "registration" {
+					fmt.Fprintln(conn, "OK hello proto=1")
+				}
+				<-stop
+			}()
+			app := NewApp()
+			started := time.Now()
+			err = app.Connect("127.0.0.1", listener.Addr().(*net.TCPAddr).Port, "alice")
+			elapsed := time.Since(started)
+			if err == nil {
+				app.Disconnect()
+				t.Fatal("silent server accepted the connection")
+			}
+			if elapsed < 4*time.Second || elapsed > 8*time.Second {
+				t.Fatalf("handshake timeout took %s; expected about five seconds", elapsed)
+			}
+			if app.IsConnected() || app.GetUsername() != "" {
+				t.Fatal("failed handshake left an active session")
+			}
+		})
+	}
+}
+
+func TestGUIRejectedHandshake(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		fmt.Fprintln(conn, "OK hello proto=1")
+		bufio.NewReader(conn).ReadString('\n')
+		fmt.Fprintln(conn, "ERR 409 USERNAME_TAKEN Username already connected")
+	}()
+	app := NewApp()
+	err = app.Connect("127.0.0.1", listener.Addr().(*net.TCPAddr).Port, "alice")
+	if err == nil || !strings.Contains(err.Error(), "USERNAME_TAKEN") {
+		t.Fatalf("server rejection was not returned: %v", err)
+	}
+	if app.IsConnected() || app.GetUsername() != "" {
+		t.Fatal("rejected handshake left an active session")
+	}
+}
+
+func TestGUIInvalidHandshakeFrames(t *testing.T) {
+	cases := []struct{ name, frame string }{
+		{"unknown prefix", "UNKNOWN greeting\n"},
+		{"invalid UTF-8", "OK hello \xff\n"},
+		{"CRLF", "OK hello proto=1\r\n"},
+		{"oversized", "OK " + strings.Repeat("x", 4096) + "\n"},
+		{"unterminated", "OK hello proto=1"},
+		{"unexpected greeting", "OK something else\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			go func() {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				fmt.Fprint(conn, tc.frame)
+			}()
+			app := NewApp()
+			if err := app.Connect("127.0.0.1", listener.Addr().(*net.TCPAddr).Port, "alice"); err == nil {
+				app.Disconnect()
+				t.Fatal("invalid server handshake accepted")
+			}
+			if app.IsConnected() || app.GetUsername() != "" {
+				t.Fatal("invalid handshake retained session state")
+			}
+		})
+	}
+}
+
+func TestGUIDisconnectClearsSessionOnce(t *testing.T) {
+	for _, remote := range []bool{false, true} {
+		t.Run(fmt.Sprintf("remote=%t", remote), func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			release := make(chan struct{})
+			defer close(release)
+			peerDone := make(chan struct{})
+			go func() {
+				defer close(peerDone)
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				reader := bufio.NewReader(conn)
+				fmt.Fprintln(conn, "OK hello proto=1")
+				reader.ReadString('\n')
+				fmt.Fprintln(conn, "OK connected")
+				if remote {
+					<-release
+				} else {
+					reader.ReadString('\n')
+				}
+			}()
+			var count atomic.Int32
+			events := make(chan eventItem, 8)
+			app := NewApp()
+			app.OnEvent = func(kind, payload string) {
+				if kind == "disconnected" {
+					count.Add(1)
+					events <- eventItem{kind, payload}
+				}
+			}
+			if err := app.Connect("127.0.0.1", listener.Addr().(*net.TCPAddr).Port, "alice"); err != nil {
+				t.Fatal(err)
+			}
+			if remote {
+				release <- struct{}{}
+			} else if err := app.Disconnect(); err != nil {
+				t.Fatal(err)
+			}
+			waitForEvent(t, events, 2*time.Second, func(kind, payload string) bool { return kind == "disconnected" })
+			if app.IsConnected() || app.GetUsername() != "" {
+				t.Fatal("disconnection retained session state")
+			}
+			if err := app.Disconnect(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-peerDone:
+			case <-time.After(2 * time.Second):
+				t.Fatal("peer stayed connected")
+			}
+			select {
+			case <-events:
+				t.Fatal("duplicate disconnection event")
+			case <-time.After(50 * time.Millisecond):
+			}
+			if count.Load() != 1 {
+				t.Fatalf("got %d disconnection events", count.Load())
+			}
+		})
+	}
+}
+
+func TestGUIDisconnectCallbackCanDisconnect(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		reader := bufio.NewReader(conn)
+		fmt.Fprintln(conn, "OK hello proto=1")
+		reader.ReadString('\n')
+		fmt.Fprintln(conn, "OK connected")
+		reader.ReadString('\n')
+	}()
+	app := NewApp()
+	reentered := make(chan error, 1)
+	app.OnEvent = func(kind, payload string) {
+		if kind == "disconnected" {
+			reentered <- app.Disconnect()
+		}
+	}
+	if err := app.Connect("127.0.0.1", listener.Addr().(*net.TCPAddr).Port, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	finished := make(chan error, 1)
+	go func() { finished <- app.Disconnect() }()
+	for _, result := range []<-chan error{reentered, finished} {
+		select {
+		case err := <-result:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("disconnected callback deadlocked when calling Disconnect")
+		}
+	}
+	if app.IsConnected() || app.GetUsername() != "" {
+		t.Fatal("reentrant disconnection retained session state")
 	}
 }

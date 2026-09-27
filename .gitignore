@@ -4,6 +4,12 @@
 /.go-cache/
 /.npm-cache/
 /.webkit-sdk/
+/.webkit-sdk.stage.*/
+/.webkit-sdk.old.*/
+/.cc-sdk/
+/.cc-cache/
+/cc
+/gcc
 /go
 /node
 /npm
