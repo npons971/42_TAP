@@ -4,6 +4,14 @@ This repository is a work in progress for the 42 TAP multiplayer text adventure.
 
 ## Play with the GUI
 
+For a multiplayer demonstration, run `make run-all` in a graphical session.
+It starts the server in the current terminal, waits for the TAP greeting, then
+opens two separate terminals running `make run-cli` and `make gui`. The GUI uses
+this server without starting another one. Press Ctrl+C in the original terminal
+to stop the server. A supported terminal emulator must be installed (GNOME
+Terminal, Konsole, Xfce Terminal, MATE Terminal, Kitty, Alacritty or xterm).
+Use `make build` to compile all three components without launching them.
+
 ```sh
 make gui
 ```

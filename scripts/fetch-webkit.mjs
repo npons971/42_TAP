@@ -8,6 +8,10 @@ import { fileURLToPath } from 'node:url';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cache = path.join(repo, 'install_files/webkit');
 const [distribution, codename, ...flags] = process.argv.slice(2);
+if (distribution === 'fedora') {
+  await import('./fetch-webkit-fedora.mjs');
+  process.exit(0);
+}
 if (!['ubuntu', 'debian'].includes(distribution) || !/^[a-z]+$/.test(codename || '')) {
   throw new Error('Expected an Ubuntu/Debian distribution and release codename.');
 }
