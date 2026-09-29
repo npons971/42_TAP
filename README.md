@@ -51,6 +51,12 @@ server on the default port 4242:
 make run-server
 ```
 
+Once listening, the server prints ready-to-copy `make run-cli` and
+`make run-gui` commands with its network addresses and actual port. Use the
+address on the same network as the other PC. If several interfaces are active,
+several command pairs are displayed. A loopback-only listener prints local
+commands instead.
+
 To use another listen address:
 
 ```sh
