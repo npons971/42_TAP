@@ -9,7 +9,7 @@ make gui
 Cette commande prépare les outils locaux, installe le frontend depuis son
 lockfile, compile le client puis ouvre la fenêtre. Si aucun serveur TAP
 n'écoute sur `127.0.0.1:4242`, elle démarre le serveur du dépôt avec
-`data/world.json`. Choisissez un pseudo puis cliquez sur **CONNECT & PLAY**.
+`data/world.json`. Choisissez un pseudo puis cliquez sur **Begin adventure**.
 Le serveur démarré par le lanceur s'arrête à la fermeture du GUI ; un serveur
 qui existait déjà continue de fonctionner. Les journaux du serveur local sont
 dans `.build/gui-server.log`. Fermer le serveur remet le monde à son état initial.

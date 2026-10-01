@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" fill="none">
+  <g stroke="#c5ae7b">
+    <circle cx="200" cy="200" r="146" opacity=".25"/>
+    <circle cx="200" cy="200" r="131" opacity=".6"/>
+    <circle cx="200" cy="200" r="120" stroke-dasharray="1 11" opacity=".7"/>
+    <circle cx="200" cy="200" r="83" opacity=".3"/>
+    <path d="M200 36v26m0 276v26M36 200h26m276 0h26M84 84l20 20m192 192 20 20M84 316l20-20M296 104l20-20" opacity=".5"/>
+    <path d="m200 83 22 95 95 22-95 22-22 95-22-95-95-22 95-22Z" fill="#c5ae7b" fill-opacity=".08"/>
+    <path d="m200 83 0 117 22-22Zm117 117H200l22 22Zm-117 117V200l-22 22ZM83 200h117l-22-22Z" fill="#c5ae7b" fill-opacity=".55"/>
+    <path d="m132 132 68 42 68-42-42 68 42 68-68-42-68 42 42-68Z" opacity=".55"/>
+    <circle cx="200" cy="200" r="8" fill="#243c34"/>
+    <circle cx="200" cy="200" r="3" fill="#c5ae7b"/>
+    <path d="M22 113c30-42 30-73 103-84M3 112c31-40 22-76 107-97M287 378c42-30 73-30 84-103M288 397c40-31 76-22 97-107" opacity=".18"/>
+  </g>
+  <g fill="#c5ae7b" font-family="Georgia,serif" font-size="14" text-anchor="middle">
+    <text x="200" y="25">N</text><text x="200" y="389">S</text><text x="18" y="205">W</text><text x="382" y="205">E</text>
+  </g>
+</svg>
