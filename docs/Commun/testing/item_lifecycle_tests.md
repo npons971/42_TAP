@@ -9,7 +9,7 @@ récompense est attribuée une fois par monde, sans copie par joueur.
 Depuis la racine, avec le SDK local et les caches locaux :
 
 ```sh
-make test-server
+make test
 GOPATH="$PWD/.go-work" GOCACHE="$PWD/.go-cache" ./go test -race -count=30 ./internal/server
 make build-server
 GOPATH="$PWD/.go-work" GOCACHE="$PWD/.go-cache" ./go vet ./...

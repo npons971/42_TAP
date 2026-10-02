@@ -23,7 +23,8 @@ dans `.build/gui-server.log`. Fermer le serveur remet le monde à son état init
 | `make dev-gui` | Développer avec rechargement automatique |
 | `make build-gui` | Compiler sans ouvrir de fenêtre |
 | `make check-gui` | Diagnostiquer les dépendances locales |
-| `make test-gui` | Tests TCP isolés, build frontend et régressions des handlers |
+| `make test` | Tests serveur/CLI/GUI, build frontend et régressions des handlers |
+| `make lint` | Formatage Go, analyse Go et contrôles JavaScript/Svelte |
 
 Le binaire est `Project/client-gui/build/bin/tap-gui`. Utilisez `make gui`
 pour lui fournir les bibliothèques locales et la configuration du serveur.

@@ -30,9 +30,9 @@ sont implémentées.
 
 ## Vérification
 
-- `make test-gui` : tests TCP avec détecteur de concurrence, build Svelte et
+- `make test` : tests serveur/CLI et TCP GUI avec détecteur de concurrence, build Svelte et
   régressions des handlers du frontend.
-- `make test` : tests Go de l'ensemble serveur/CLI avec détecteur de concurrence.
+- `make lint` : vérification du formatage Go, analyse statique Go et contrôles JavaScript/Svelte.
 - `make build-gui` : compilation native Linux avec GTK3/WebKitGTK 4.1 locaux.
 - `make check-gui` : diagnostic des outils locaux.
 - Lancements de contrôle de `make gui` et `make dev-gui` sur ports temporaires :
