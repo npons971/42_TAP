@@ -5,7 +5,8 @@ import vm from 'node:vm';
 // Exercise shipped handlers with Wails promises and deterministic timers.
 const source = fs.readFileSync(new URL('../Project/client-gui/frontend/src/App.svelte', import.meta.url), 'utf8');
 const script = source.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1]
-  .replace(/import\s*[\s\S]*?\sfrom\s*['"]svelte['"];?/g, '');
+  .replace(/import\s*[\s\S]*?\sfrom\s*['"]svelte['"];?/g, '')
+  .replace(/import\s+(?:RoomMap|Icon)\s+from\s*['"][^'"]+['"];?/g, '');
 const sent = [];
 const timers = new Map();
 let nextTimer = 0;
@@ -169,4 +170,31 @@ run('connected = false');
 await run(`callMove('north')`);
 assert.ok(!methods().includes('Move'), 'disconnected actions must not reach backend');
 
-console.log('GUI protocol: fallback, combat, groups, quests, Unicode validation, connection setup, network errors, logs and session reset passed.');
+// Hotkeys must stay out of chat, dialogs, form controls and expanded maps.
+run('connected = true');
+for (const [key, method] of [['1', 'Look'], ['2', 'Status'], ['3', 'Quests'], ['4', 'Who']]) {
+  resetCalls();
+  run(`shortcutPrevented = false; handleGameShortcut({key:${JSON.stringify(key)}, target:{closest:()=>null}, preventDefault:()=>shortcutPrevented=true})`);
+  await settle();
+  assert.deepEqual(methods(), [method]);
+  assert.equal(run('shortcutPrevented'), true);
+}
+for (const guard of ['event.repeat = true', 'event.isComposing = true', 'event.ctrlKey = true', 'event.metaKey = true', 'event.altKey = true', 'event.shiftKey = true', 'event.target.closest = () => ({})', 'activeDialogue = {}', 'showGroupModal = true', 'mapExpanded = true', 'connected = false']) {
+  resetCalls();
+  run(`activeDialogue = null; showGroupModal = false; mapExpanded = false; connected = true; event = {key:'1',target:{closest:()=>null},preventDefault:()=>{}}; ${guard}; handleGameShortcut(event)`);
+  await settle();
+  assert.equal(sent.length, 0, `hotkey is ignored when ${guard}`);
+}
+run(`activeDialogue = null; showGroupModal = false; mapExpanded = false; connected = true; handleGameShortcut({key:'5',target:{closest:()=>null},preventDefault:()=>{}})`);
+assert.equal(run('showGroupModal'), true);
+run(`selectMapEntity('item', 'item.fountain')`);
+assert.equal(run('nearbyTab'), 'item');
+assert.equal(run('selectedEntity'), 'item.fountain');
+run(`handleServerOK('{"room":{"id":"loc.other","name":"Other","exits":{}},"items":[],"npcs":[],"players":[]}', 'LOOK')`);
+assert.equal(run('selectedEntity'), '', 'room changes clear old marker selection');
+run(`resetSession()`);
+assert.equal(run('mapExpanded'), false);
+assert.equal(run('nearbyTab'), 'npc');
+assert.equal(run('Object.keys(roomNames).length'), 0, 'discovered map labels do not leak into a new server session');
+
+console.log('GUI protocol: fallback, combat, groups, quests, Unicode validation, connection setup, network errors, logs, hotkeys, map selection and session reset passed.');
