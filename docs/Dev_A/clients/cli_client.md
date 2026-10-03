@@ -1,5 +1,8 @@
 # CLI client — implemented
 
+Owner: Alexis (Dev C), game engine/world/CLI pole. See
+see [team organization](../../Commun/TAP_taches_communes.md).
+
 The client lives in `cmd/client-cli` and `internal/cli`. It uses the Go standard
 library and accepts **direct protocol syntax**. This keeps commands identical
 between the terminal, the GUI backend and peer clients, without guessing IDs

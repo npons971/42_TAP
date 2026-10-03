@@ -1,4 +1,8 @@
-# Aris — serveur et CLI : vérifications
+# Serveur, moteur et CLI : vérifications
+
+Cette matrice a été établie pour le travail réalisé par Aris. Son suivi est
+désormais partagé entre Dev A (réseau/protocole) et Dev C (moteur/CLI),
+avec Dev B pour les scénarios GUI. Voir [l’organisation à trois](../TAP_taches_communes.md).
 
 ## Commandes reproductibles
 

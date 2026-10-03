@@ -1,5 +1,9 @@
 # TAP — Game Design Document (GDD)
 
+Le GDD est piloté par Alexis (Dev C), avec la participation
+d’Aris et Novanns. Le monde initial reste une contribution de Novanns.
+Voir [l’organisation à trois](../TAP_taches_communes.md).
+
 Ce dossier constitue le **Game Design Document (GDD)** de référence pour le projet **TAP (The Answer Protocol)**, un jeu d'aventure textuelle multijoueur rétro (MUD) client-serveur TCP.
 
 Le GDD est la source de vérité pour le game design, le contenu narratif, l'agencement du monde, l'équilibrage et l'expérience utilisateur. Il sert de spécification fonctionnelle pour le serveur, le client CLI et le client GUI.
