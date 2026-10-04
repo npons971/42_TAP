@@ -1,5 +1,9 @@
 <script>
   import { onMount, tick } from 'svelte';
+  import RoomMap from './RoomMap.svelte';
+  import Icon from './Icon.svelte';
+  import Nearby from './Nearby.svelte';
+  import PixelSprite from './PixelSprite.svelte';
 
   // Connection State
   let connected = false;
@@ -25,10 +29,8 @@
 
   // Room names mapping for intuitive navigation
   let roomNames = {};
-
-  function getDestName(destId) {
-    return roomNames[destId] || String(destId).replace(/^loc\./, '').replace(/_/g, ' ');
-  }
+  let selectedEntity = '';
+  let mapExpanded = false;
 
   // Inventory & Quests
   let inventory = [];
@@ -78,7 +80,7 @@
 
   // Helper for adding messages
   function addMessage(channel, sender, text, type = "normal") {
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     const msg = { time, sender, text, type };
     if (messages[channel]) {
       messages[channel] = [...messages[channel], msg].slice(-MESSAGE_LIMIT);
@@ -91,7 +93,7 @@
   }
 
   function addLog(text, type = "info") {
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     messages.logs = [...messages.logs, { time, sender: "SYSTEM", text, type }].slice(-MESSAGE_LIMIT);
     scrollToBottom();
   }
@@ -106,6 +108,8 @@
     connecting = false;
     currentRoom = emptyRoom();
     roomNames = {};
+    selectedEntity = '';
+    mapExpanded = false;
     inventory = [];
     quests = [];
     playerHP = 100;
@@ -183,6 +187,9 @@
 
         // LOOK payload
         if (data.room && !Array.isArray(data.room) && data.room.id) {
+          if (currentRoom.id !== data.room.id) {
+            selectedEntity = '';
+          }
           currentRoom = {
             id: data.room.id || "unknown",
             name: data.room.name || "Unknown Room",
@@ -227,6 +234,7 @@
         // TALK payload
         if (data.npc && data.dialogue) {
           const text = Array.isArray(data.dialogue) ? data.dialogue.join("\n") : String(data.dialogue);
+          mapExpanded = false;
           activeDialogue = { npc: data.npc, text };
           addMessage("room", data.npc, text, "dialogue");
           return;
@@ -238,6 +246,7 @@
 
     // Key-value OK responses: OK room=loc.market, OK taken=item.apple, etc.
     if (command === "TALK") {
+      mapExpanded = false;
       activeDialogue = {npc: "NPC", text: payload};
       addMessage("room", "NPC", payload, "dialogue");
     } else if (payload.startsWith("players=")) {
@@ -259,7 +268,7 @@
         const cleanName = item.replace(/^item\./, '').replace(/_/g, ' ');
         return { id: item, name: cleanName, obtainable: true };
       }
-      return { id: item.id, name: item.name || item.id, obtainable: item.obtainable !== false };
+      return { id: item.id, name: item.name || item.id, description: item.description || '', obtainable: item.obtainable !== false };
     });
   }
 
@@ -269,7 +278,7 @@
         const cleanName = npc.replace(/^npc\./, '').replace(/_/g, ' ');
         return { id: npc, name: cleanName, role: 'dialogue', unknownRole: true };
       }
-      return { id: npc.id, name: npc.name || npc.id, role: npc.role || 'dialogue' };
+      return { id: npc.id, name: npc.name || npc.id, description: npc.description || '', role: npc.role || 'dialogue' };
     });
   }
 
@@ -386,15 +395,12 @@
 
   const callMove = direction => invoke("Move", direction);
   const callLook = () => invoke("Look");
-  const callTake = id => invoke("Take", id);
   const callDrop = id => invoke("Drop", id);
-  const callTalk = id => invoke("Talk", id);
   const callAttack = id => invoke("Attack", id);
   const callInventory = () => invoke("Inventory");
   const callStatus = () => invoke("Status");
   const callQuests = () => invoke("Quests");
   const callWho = () => invoke("Who");
-  const callQuest = id => invoke("Quest", id);
   const callUse = id => invoke("SendCommand", "USE " + id);
   const callDefend = () => invoke("SendCommand", "DEFEND");
   const callFlee = () => invoke("SendCommand", "FLEE");
@@ -414,39 +420,53 @@
   function handleKeyDown(e) {
     if (e.key === "Enter" && !e.isComposing) handleSendMessage();
   }
+  function selectMapEntity(_kind, id) {
+    selectedEntity = id;
+    tick().then(() => globalThis.document?.getElementById('nearby-' + id)?.focus());
+  }
+  function handleGameShortcut(event) {
+    if (!connected || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || activeDialogue || showGroupModal || mapExpanded) return;
+    if (event.target?.closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return;
+    const action = {'1': callLook, '2': callStatus, '3': callQuests, '4': callWho, '5': () => showGroupModal = true}[event.key];
+    if (action) { event.preventDefault(); action(); }
+  }
 </script>
 
-<main class="app-container">
+<svelte:window on:keydown={handleGameShortcut} />
+
+<main class="app-container" class:game-session={connected}>
   {#if !connected}
     <!-- CONNECTION SCREEN -->
     <div class="connect-overlay">
       <div class="connect-card">
-        <div class="retro-badge">42 CURRICULUM PROJECT</div>
-        <h1 class="glow-title">THE ANSWER PROTOCOL</h1>
-        <p class="subtitle">Choose your username and connect to start playing.</p>
+        <h1 class="connect-title">42 TAP</h1>
+        <p class="connect-subtitle">A LITTLE TEXT ADVENTURE</p>
+        <div class="title-sprite"><PixelSprite name="hero" size={48} /></div>
 
         <form class="connect-form" on:submit|preventDefault={handleConnect}>
-          <div class="form-group">
-            <label for="host">SERVER HOST</label>
-            <input id="host" type="text" bind:value={host} placeholder="127.0.0.1" required disabled={connecting} />
+          <div class="form-group username-field">
+            <label for="username">Player name</label>
+            <input id="username" type="text" bind:value={username} placeholder="e.g. aris" required disabled={connecting} autocomplete="username" aria-describedby="username-hint" />
+            <small id="username-hint">3–20 lowercase letters, digits or underscores.</small>
           </div>
+          <div class="server-fields">
+            <div class="form-group">
+              <label for="host">Server address</label>
+              <input id="host" type="text" bind:value={host} placeholder="127.0.0.1" required disabled={connecting} />
+            </div>
 
-          <div class="form-group">
-            <label for="port">PORT</label>
-            <input id="port" type="number" bind:value={port} placeholder="4242" min="1" max="65535" step="1" required disabled={connecting} />
-          </div>
-
-          <div class="form-group">
-            <label for="username">ADVENTURER USERNAME</label>
-            <input id="username" type="text" bind:value={username} placeholder="e.g. aris" required disabled={connecting} autocomplete="username" />
+            <div class="form-group">
+              <label for="port">Port</label>
+              <input id="port" type="number" bind:value={port} placeholder="4242" min="1" max="65535" step="1" required disabled={connecting} />
+            </div>
           </div>
 
           {#if connectionError}
-            <div class="error-badge">{connectionError}</div>
+            <div class="error-badge" role="alert">{connectionError}</div>
           {/if}
 
           <button class="btn-primary" type="submit" disabled={connecting}>
-            {connecting ? "CONNECTING..." : "CONNECT & PLAY"}
+            {connecting ? "Connecting…" : "Start"}
           </button>
         </form>
       </div>
@@ -455,164 +475,80 @@
     <!-- ACTIVE GAME INTERFACE -->
     <header class="top-bar">
       <div class="brand">
-        <span class="pulse-dot"></span>
-        <span class="realm-title">TAP // {host}:{port}</span>
+        <span class="brand-mark">42 TAP</span>
+        <span class="server-address">{host}:{port}</span>
       </div>
 
       <div class="stats-badges">
-        <span class="badge player-badge">USER: <strong>{username}</strong></span>
-        <span class="badge room-badge">ROOM PLAYERS: <strong>{roomPlayersCount}</strong></span>
-        <span class="badge server-badge">SERVER TOTAL: <strong>{serverPlayersCount}</strong></span>
+        <span class="badge room-badge">Room: {roomPlayersCount}</span>
+        <span class="badge server-badge">Online: {serverPlayersCount}</span>
       </div>
 
-      <button class="btn-disconnect" on:click={handleDisconnect}>QUIT / LEAVE</button>
+      <button class="btn-disconnect" on:click={handleDisconnect}>Quit</button>
     </header>
 
     {#if actionError}<div class="action-error" role="alert">{actionError}</div>{/if}
     <div class="game-grid">
-      <!-- LEFT COLUMN: WORLD EXPLORATION -->
+      <!-- Map and local interactions are driven exclusively by LOOK data. -->
       <section class="panel room-panel">
-        <div class="panel-header">
-          <h2>CURRENT LOCATION</h2>
-          <span class="room-id">[{currentRoom.id}]</span>
+        <div class="panel-header location-header">
+          <h2 class="room-name">{currentRoom.name}</h2>
         </div>
-
-        <div class="room-content">
-          <h3 class="room-name">{currentRoom.name}</h3>
-          <p class="room-desc">{currentRoom.description}</p>
-
-          <div class="exits-section">
-            <h4>AVAILABLE EXITS</h4>
-            <div class="exits-grid">
-              {#each Object.entries(currentRoom.exits) as [dir, dest]}
-                <button class="btn-exit" disabled={combatState === "EN_COMBAT"} on:click={() => callMove(dir)}>
-                  <span class="dir-tag">{dir.toUpperCase()}</span>
-                  <span class="dest-tag">{getDestName(dest)}</span>
-                </button>
-              {/each}
-              {#if Object.keys(currentRoom.exits).length === 0}
-                <div class="empty-hint">No exits available (Dead end)</div>
-              {/if}
-            </div>
-          </div>
-        </div>
-
-        <!-- ENTITIES IN ROOM -->
-        <div class="entities-grid">
-          <!-- GROUND ITEMS -->
-          <div class="entity-card">
-            <h4>ITEMS ON GROUND ({currentRoom.items.length})</h4>
-            <div class="entity-list">
-              {#each currentRoom.items as item}
-                <div class="entity-item">
-                  <span class="entity-name">{item.name}</span>
-                  {#if item.obtainable}
-                    <button class="btn-action btn-take" disabled={combatState === "EN_COMBAT"} on:click={() => callTake(item.id)}>TAKE</button>
-                  {:else}
-                    <span class="scenery-tag">SCENERY</span>
-                  {/if}
-                </div>
-              {/each}
-              {#if currentRoom.items.length === 0}
-                <div class="empty-list">Ground is clear</div>
-              {/if}
-            </div>
-          </div>
-
-          <!-- NPCS IN ROOM -->
-          <div class="entity-card">
-            <h4>NPCS PRESENT ({currentRoom.npcs.length})</h4>
-            <div class="entity-list">
-              {#each currentRoom.npcs as npc}
-                <div class="entity-item">
-                  <span class="entity-name">{npc.name}</span>
-                  <div class="npc-buttons">
-                    {#if npc.role !== 'enemy'}
-                      <button class="btn-action btn-talk" disabled={combatState === "EN_COMBAT"} on:click={() => callTalk(npc.id)}>TALK</button>
-                    {/if}
-                    {#if npc.role === 'quest_giver' || npc.unknownRole}
-                      <button class="btn-action btn-take" disabled={combatState === "EN_COMBAT"} on:click={() => callQuest(npc.id)}>QUEST</button>
-                    {/if}
-                    {#if npc.role === 'enemy' || npc.unknownRole}
-                      <button class="btn-action btn-attack" on:click={() => callAttack(npc.id)}>ATTACK</button>
-                    {/if}
-                  </div>
-                </div>
-              {/each}
-              {#if currentRoom.npcs.length === 0}
-                <div class="empty-list">No one is here</div>
-              {/if}
-            </div>
-          </div>
-
-          <!-- PLAYERS IN ROOM -->
-          <div class="entity-card">
-            <h4>PLAYERS PRESENT ({currentRoom.players.length})</h4>
-            <div class="entity-list">
-              {#each currentRoom.players as player}
-                <div class="entity-item">
-                  <span class="player-tag {player === username ? 'player-self' : 'player-other'}">
-                    👤 {player} {player === username ? '(You)' : ''}
-                  </span>
-                </div>
-              {/each}
-              {#if currentRoom.players.length === 0}
-                <div class="empty-list">No other adventurers here</div>
-              {/if}
-            </div>
-          </div>
-        </div>
+        <RoomMap room={currentRoom} names={roomNames} {username} inCombat={combatState === 'EN_COMBAT'} onmove={callMove} onselect={selectMapEntity} bind:expanded={mapExpanded} />
+        <div class="location-caption"><p class="room-desc" title={currentRoom.description}>{currentRoom.description || 'Discovering your surroundings…'}</p></div>
+        <Nearby room={currentRoom} {username} {selectedEntity} inCombat={combatState === 'EN_COMBAT'} onaction={invoke} />
       </section>
 
       <!-- RIGHT COLUMN: PLAYER STATUS & INVENTORY -->
       <aside class="panel status-panel">
         <div class="panel-header">
-          <h2>CHARACTER VITALITY</h2>
+          <h2>PLAYER</h2>
           <span class="status-tag {combatState === 'EN_COMBAT' ? 'in-combat' : 'out-combat'}">
-            {combatState}
+            {combatState === 'EN_COMBAT' ? 'In combat' : 'Exploring'}
           </span>
         </div>
 
+        <div class="character-summary"><span class="avatar"><PixelSprite name="hero" size={32}/></span><strong>{username}</strong></div>
         <div class="vitality-box">
           <div class="hp-header">
-            <span>HEALTH POINTS</span>
-            <span class="hp-numbers">{playerHP} / {playerMaxHP} HP</span>
+            <span>HP</span>
+            <span class="hp-numbers">{playerHP}/{playerMaxHP}</span>
           </div>
-          <div class="hp-bar-bg">
+          <div class="hp-bar-bg" role="progressbar" aria-label="Health points" aria-valuenow={playerHP} aria-valuemin={0} aria-valuemax={playerMaxHP}>
             <div class="hp-bar-fill" style="width: {Math.max(0, Math.min(100, (playerHP / playerMaxHP) * 100))}%"></div>
           </div>
         </div>
 
         {#if combatState === 'EN_COMBAT'}
           <div class="combat-bar">
-            <span class="combat-target-label">TARGET: <strong>{currentTarget || 'Hostile Enemy'}</strong></span>
+            <span class="combat-target-label">Facing <strong>{currentTarget || 'Hostile Enemy'}</strong></span>
             <div class="combat-buttons">
               {#if currentTarget}
-                <button class="btn-action btn-attack" on:click={() => callAttack(currentTarget)}>ATTACK</button>
+                <button class="btn-action btn-attack" on:click={() => callAttack(currentTarget)}>Attack</button>
               {/if}
-              <button class="btn-action btn-talk" on:click={callDefend}>DEFEND</button>
-              <button class="btn-action btn-drop" on:click={callFlee}>FLEE</button>
+              <button class="btn-action btn-talk" on:click={callDefend}>Defend</button>
+              <button class="btn-action btn-drop" on:click={callFlee}>Flee</button>
             </div>
           </div>
         {/if}
 
         <div class="inventory-section">
           <div class="panel-header-sub">
-            <h3>INVENTORY ({inventory.length})</h3>
-            <button class="btn-tiny" on:click={callInventory}>REFRESH</button>
+            <h3>Inventory <span class="count">{inventory.length}</span></h3>
+            <button class="btn-tiny" on:click={callInventory} aria-label="Refresh inventory"><Icon name="refresh" size={16}/></button>
           </div>
           <div class="inventory-list">
             {#each inventory as item}
               <div class="inventory-item">
                 <span class="item-name">{item.name || item.id}</span>
                 <div class="npc-buttons">
-                  <button class="btn-action btn-talk" disabled={combatState === "EN_COMBAT"} on:click={() => callUse(item.id)}>USE</button>
-                  <button class="btn-action btn-drop" disabled={combatState === "EN_COMBAT"} on:click={() => callDrop(item.id)}>DROP</button>
+                  <button class="btn-action btn-talk" disabled={combatState === "EN_COMBAT"} on:click={() => callUse(item.id)}>Use</button>
+                  <button class="btn-action btn-drop" disabled={combatState === "EN_COMBAT"} on:click={() => callDrop(item.id)}>Drop</button>
                 </div>
               </div>
             {/each}
             {#if inventory.length === 0}
-              <div class="empty-list">Backpack is empty</div>
+              <div class="empty-list">Inventory empty.</div>
             {/if}
           </div>
         </div>
@@ -620,8 +556,8 @@
         <!-- ACTIVE QUESTS TRACKER -->
         <div class="quests-section">
           <div class="panel-header-sub">
-            <h3>QUEST TRACKER ({quests.length})</h3>
-            <button class="btn-tiny" on:click={callQuests}>REFRESH</button>
+            <h3>Quests <span class="count">{quests.length}</span></h3>
+            <button class="btn-tiny" on:click={callQuests} aria-label="Refresh quests"><Icon name="refresh" size={16}/></button>
           </div>
           <div class="quests-list">
             {#each quests as q}
@@ -638,20 +574,20 @@
               </div>
             {/each}
             {#if quests.length === 0}
-              <div class="empty-list">No active quests. Talk to NPCs to explore!</div>
+              <div class="empty-list">Talk to a quest giver.</div>
             {/if}
           </div>
         </div>
 
         <!-- QUICK ACTION BUTTONS -->
         <div class="actions-section">
-          <h3>GAME ACTIONS</h3>
+          <div class="hotbar-heading"><h3>MENU</h3></div>
           <div class="action-buttons-grid">
-            <button class="btn-quick" on:click={callLook}>LOOK</button>
-            <button class="btn-quick" on:click={callStatus}>STATUS</button>
-            <button class="btn-quick" on:click={callQuests}>QUESTS</button>
-            <button class="btn-quick" on:click={callWho}>WHO</button>
-            <button class="btn-quick" on:click={() => showGroupModal = true}>GROUP</button>
+            <button class="btn-quick" on:click={callLook} title="Inspect and refresh your surroundings (1)" aria-keyshortcuts="1"><span>Look</span><kbd>1</kbd></button>
+            <button class="btn-quick" on:click={callStatus} title="Refresh your health and combat state (2)" aria-keyshortcuts="2"><span>Status</span><kbd>2</kbd></button>
+            <button class="btn-quick" on:click={callQuests} title="Refresh your quest journal (3)" aria-keyshortcuts="3"><span>Quests</span><kbd>3</kbd></button>
+            <button class="btn-quick" on:click={callWho} title="Refresh the players in your room and online (4)" aria-keyshortcuts="4"><span>Players</span><kbd>4</kbd></button>
+            <button class="btn-quick party-action" on:click={() => showGroupModal = true} title="Create, join or manage your party (5)" aria-keyshortcuts="5"><span>Party</span><kbd>5</kbd></button>
           </div>
         </div>
       </aside>
@@ -661,43 +597,43 @@
     <section class="panel chat-panel">
       <div class="tabs-header">
         <button class="tab-btn {activeTab === 'global' ? 'active' : ''}" on:click={() => activeTab = 'global'}>
-          GLOBAL CHAT ({messages.global.length})
+          Global
         </button>
         <button class="tab-btn {activeTab === 'room' ? 'active' : ''}" on:click={() => activeTab = 'room'}>
-          ROOM CHAT ({messages.room.length})
+          Room
         </button>
         <button class="tab-btn {activeTab === 'group' ? 'active' : ''}" on:click={() => activeTab = 'group'}>
-          GROUP CHAT ({messages.group.length})
+          Party
         </button>
         <button class="tab-btn {activeTab === 'logs' ? 'active' : ''}" on:click={() => activeTab = 'logs'}>
-          SYSTEM LOGS ({messages.logs.length})
+          Logs
         </button>
       </div>
 
       <div class="chat-viewport" bind:this={chatViewport}>
         {#each messages[activeTab] as msg}
           <div class="chat-row {msg.type}">
-            <span class="msg-time">[{msg.time}]</span>
-            <span class="msg-sender">&lt;{msg.sender}&gt;</span>
+            <span class="msg-time">{msg.time}</span>
+            <span class="msg-sender">{msg.sender}</span>
             <span class="msg-text">{msg.text}</span>
           </div>
         {/each}
         {#if messages[activeTab].length === 0}
-          <div class="empty-chat">No messages yet in this channel.</div>
+          <div class="empty-chat">{activeTab === 'logs' ? 'No events yet.' : 'No messages yet.'}</div>
         {/if}
       </div>
 
       <div class="chat-input-bar">
-        <span class="channel-indicator">#{activeTab.toUpperCase()}:</span>
+        <span class="channel-indicator">#{activeTab === 'global' ? 'world' : activeTab === 'group' ? 'party' : activeTab}</span>
         <input
           type="text"
           aria-label="Chat message"
           disabled={activeTab === "logs"}
-          placeholder={activeTab === "logs" ? "System logs — read only" : "Type message and press Enter..."}
+          placeholder={activeTab === "logs" ? "Read only" : "Message..."}
           bind:value={chatInput}
           on:keydown={handleKeyDown}
         />
-        <button class="btn-send" disabled={activeTab === "logs" || !chatInput.trim()} on:click={handleSendMessage}>SEND</button>
+        <button class="btn-send" disabled={activeTab === "logs" || !chatInput.trim()} on:click={handleSendMessage}>Send</button>
       </div>
     </section>
 
@@ -706,11 +642,11 @@
       <div class="modal-backdrop">
         <div class="dialogue-card" role="dialog" aria-modal="true" aria-label="NPC Dialogue">
           <div class="dialogue-header">
-            <h3>{activeDialogue.npc} SPEAKS</h3>
-            <button class="btn-close" aria-label="Close dialog" on:click={() => activeDialogue = null}>✕</button>
+            <h3>{activeDialogue.npc}</h3>
+            <button class="btn-close" aria-label="Close dialog" on:click={() => activeDialogue = null}><Icon name="close" size={16}/></button>
           </div>
           <p class="dialogue-speech">"{activeDialogue.text}"</p>
-          <button class="btn-primary" on:click={() => activeDialogue = null}>CONTINUE</button>
+          <button class="btn-primary" on:click={() => activeDialogue = null}>Continue</button>
         </div>
       </div>
     {/if}
@@ -720,478 +656,24 @@
       <div class="modal-backdrop">
         <div class="dialogue-card" role="dialog" aria-modal="true" aria-label="Group Management">
           <div class="dialogue-header">
-            <h3>PARTY & GROUP ACTIONS</h3>
-            <button class="btn-close" on:click={() => showGroupModal = false}>✕</button>
+            <h3>Party</h3>
+            <button class="btn-close" aria-label="Close party dialog" on:click={() => showGroupModal = false}><Icon name="close" size={16}/></button>
           </div>
           <p class="subtitle" style="margin-bottom: 1rem;">Create a party, invite a player, or enter a leader’s username to join.</p>
           {#if actionError}<div class="error-badge" role="alert">{actionError}</div>{/if}
           {#if groupStatus}<p class="group-status" role="status">{groupStatus}</p>{/if}
           <div class="form-group" style="margin-bottom: 1rem;">
-            <label for="groupTarget">ADVENTURER USERNAME</label>
+            <label for="groupTarget">Adventurer name</label>
             <input id="groupTarget" type="text" bind:value={groupTarget} placeholder="e.g. aris" />
           </div>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button class="btn-action btn-talk" on:click={() => callGroup("CREATE")}>CREATE PARTY</button>
-            <button class="btn-action btn-talk" disabled={!groupTarget.trim()} on:click={() => callGroup("INVITE", groupTarget)}>INVITE</button>
-            <button class="btn-action btn-take" disabled={!groupTarget.trim()} on:click={() => callGroup("JOIN", groupTarget)}>JOIN PARTY</button>
-            <button class="btn-action btn-drop" on:click={() => callGroup("LEAVE", "")}>LEAVE PARTY</button>
-            <button class="btn-primary" style="margin-left: auto; padding: 0.35rem 0.8rem;" on:click={() => showGroupModal = false}>CLOSE</button>
+            <button class="btn-action btn-talk" on:click={() => callGroup("CREATE")}>Create party</button>
+            <button class="btn-action btn-talk" disabled={!groupTarget.trim()} on:click={() => callGroup("INVITE", groupTarget)}>Invite</button>
+            <button class="btn-action btn-take" disabled={!groupTarget.trim()} on:click={() => callGroup("JOIN", groupTarget)}>Join party</button>
+            <button class="btn-action btn-drop" on:click={() => callGroup("LEAVE", "")}>Leave party</button>
           </div>
         </div>
       </div>
     {/if}
   {/if}
 </main>
-
-<style>
-  :global(body) {
-    margin: 0;
-    padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", monospace;
-    background-color: #0d1117;
-    color: #e6edf3;
-    overflow: auto;
-  }
-
-  .app-container {
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
-  }
-
-  /* CONNECTION SCREEN */
-  .connect-overlay {
-    height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: radial-gradient(circle at center, #161b22 0%, #090d13 100%);
-  }
-
-  .connect-card {
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 2.5rem;
-    width: 380px;
-    box-shadow: 0 12px 36px rgba(0,0,0,0.6);
-    text-align: center;
-  }
-
-  .retro-badge {
-    display: inline-block;
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 2px;
-    color: #58a6ff;
-    border: 1px solid #1f6feb;
-    padding: 3px 8px;
-    border-radius: 4px;
-    margin-bottom: 1rem;
-  }
-
-  .glow-title {
-    font-size: 1.6rem;
-    margin: 0 0 0.5rem;
-    letter-spacing: 1px;
-    color: #f0f6fc;
-  }
-
-  .subtitle {
-    color: #8b949e;
-    font-size: 0.85rem;
-    margin-bottom: 2rem;
-  }
-
-  .connect-form {
-    display: flex;
-    flex-direction: column;
-    gap: 1.1rem;
-    text-align: left;
-  }
-
-  .form-group label {
-    display: block;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #8b949e;
-    margin-bottom: 0.35rem;
-    letter-spacing: 1px;
-  }
-
-  .form-group input {
-    width: 100%;
-    padding: 0.65rem 0.8rem;
-    background: #0d1117;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    color: #f0f6fc;
-    font-size: 0.95rem;
-    box-sizing: border-box;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-
-  .form-group input:focus {
-    border-color: #58a6ff;
-  }
-
-  .error-badge {
-    background: rgba(248, 81, 73, 0.15);
-    border: 1px solid #f85149;
-    color: #f85149;
-    font-size: 0.8rem;
-    padding: 0.5rem;
-    border-radius: 4px;
-    text-align: center;
-  }
-
-  .btn-primary {
-    background: #238636;
-    color: #fff;
-    border: none;
-    padding: 0.75rem;
-    font-size: 0.95rem;
-    font-weight: 600;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background: #2ea043;
-  }
-
-  /* TOP HEADER */
-  .top-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #161b22;
-    border-bottom: 1px solid #30363d;
-    padding: 0.5rem 1rem;
-  }
-
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-  }
-
-  .pulse-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #3fb950;
-    box-shadow: 0 0 8px #3fb950;
-  }
-
-  .realm-title {
-    font-weight: 700;
-    font-size: 0.9rem;
-    letter-spacing: 1px;
-    color: #58a6ff;
-  }
-
-  .stats-badges {
-    display: flex;
-    gap: 0.6rem;
-  }
-
-  .badge {
-    background: #21262d;
-    border: 1px solid #30363d;
-    padding: 0.25rem 0.6rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    color: #8b949e;
-  }
-
-  .badge strong {
-    color: #f0f6fc;
-  }
-
-  .btn-disconnect {
-    background: #21262d;
-    border: 1px solid #f85149;
-    color: #f85149;
-    padding: 0.3rem 0.7rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  /* GRID LAYOUT */
-  .game-grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    flex: 1;
-    min-height: 0;
-  }
-
-  .panel {
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-
-  .panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem 0.8rem;
-    border-bottom: 1px solid #21262d;
-  }
-
-  .panel-header h2 {
-    margin: 0;
-    font-size: 0.8rem;
-    letter-spacing: 1px;
-    color: #8b949e;
-  }
-
-  .room-id {
-    font-size: 0.75rem;
-    color: #6e7681;
-    font-family: monospace;
-  }
-
-  .room-panel { overflow-y: auto; }
-
-  .room-content {
-    padding: 0.8rem;
-  }
-
-  .room-name {
-    margin: 0 0 0.5rem;
-    font-size: 1.3rem;
-    color: #58a6ff;
-  }
-
-  .room-desc {
-    margin: 0 0 1rem;
-    font-size: 0.95rem;
-    line-height: 1.45;
-    color: #c9d1d9;
-  }
-
-  .exits-section h4 {
-    margin: 0 0 0.4rem;
-    font-size: 0.75rem;
-    color: #8b949e;
-    letter-spacing: 1px;
-  }
-
-  .exits-grid {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .btn-exit {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    background: #21262d;
-    border: 1px solid #30363d;
-    padding: 0.4rem 0.8rem;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .btn-exit:hover {
-    border-color: #58a6ff;
-    background: #30363d;
-  }
-
-  .dir-tag {
-    font-weight: 700;
-    font-size: 0.8rem;
-    color: #388bfd;
-  }
-
-  .dest-tag {
-    font-size: 0.7rem;
-    color: #8b949e;
-  }
-
-  /* ENTITIES */
-  .entities-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.6rem;
-    padding: 0.8rem;
-    border-top: 1px solid #21262d;
-    flex: 1;
-  }
-
-  .player-tag {
-    font-size: 0.85rem;
-    font-weight: 600;
-  }
-  .player-tag.player-self {
-    color: #3fb950;
-  }
-  .player-tag.player-other {
-    color: #58a6ff;
-  }
-
-  .entity-card {
-    background: #0d1117;
-    border: 1px solid #21262d;
-    border-radius: 4px;
-    padding: 0.5rem 0.7rem;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .entity-card h4 {
-    margin: 0 0 0.4rem;
-    font-size: 0.75rem;
-    color: #8b949e;
-  }
-
-  .entity-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    overflow-y: auto;
-  }
-
-  .entity-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.3rem 0.5rem;
-    background: #161b22;
-    border-radius: 4px;
-    font-size: 0.85rem;
-  }
-
-  .btn-action {
-    border: none;
-    padding: 0.25rem 0.5rem;
-    border-radius: 3px;
-    font-size: 0.7rem;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  .btn-take { background: #238636; color: #fff; }
-  .btn-drop { background: #da3633; color: #fff; }
-  .btn-talk { background: #1f6feb; color: #fff; }
-  .btn-attack { background: #b62324; color: #fff; }
-
-  .npc-buttons { display: flex; gap: 0.3rem; }
-  .empty-list, .empty-hint { font-size: 0.8rem; color: #6e7681; font-style: italic; }
-
-  /* VITALITY */
-  .status-panel { overflow-y: auto; padding: 0.8rem; gap: 0.8rem; }
-  .status-tag { font-size: 0.75rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
-  .status-tag.in-combat { background: #b62324; color: #fff; }
-  .status-tag.out-combat { background: #238636; color: #fff; }
-
-  .hp-header { display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 700; margin-bottom: 0.3rem; }
-  .hp-bar-bg { background: #21262d; border-radius: 4px; height: 12px; overflow: hidden; border: 1px solid #30363d; }
-  .hp-bar-fill { background: linear-gradient(90deg, #da3633, #238636); height: 100%; transition: width 0.3s; }
-
-  .combat-bar {
-    background: rgba(182, 35, 36, 0.15);
-    border: 1px solid #b62324;
-    border-radius: 4px;
-    padding: 0.4rem 0.6rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .combat-target-label {
-    font-size: 0.75rem;
-    color: #f85149;
-    font-weight: 700;
-  }
-  .combat-buttons {
-    display: flex;
-    gap: 0.3rem;
-  }
-
-  .inventory-section { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-  .panel-header-sub { display: flex; justify-content: space-between; align-items: center; }
-  .panel-header-sub h3 { margin: 0 0 0.4rem; font-size: 0.8rem; color: #8b949e; }
-  .inventory-list { background: #0d1117; border: 1px solid #21262d; border-radius: 4px; padding: 0.4rem; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 0.3rem; }
-  .inventory-item { display: flex; justify-content: space-between; align-items: center; padding: 0.3rem 0.5rem; background: #161b22; border-radius: 3px; font-size: 0.85rem; }
-
-  /* QUESTS */
-  .quests-section { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-  .quests-list { background: #0d1117; border: 1px solid #21262d; border-radius: 4px; padding: 0.4rem; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 0.35rem; }
-  .quest-card-item { background: #161b22; border-left: 3px solid #e3b341; border-radius: 3px; padding: 0.4rem 0.6rem; }
-  .quest-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2rem; }
-  .quest-title { font-size: 0.8rem; font-weight: 700; color: #f0f6fc; }
-  .quest-status-badge { font-size: 0.65rem; padding: 1px 4px; border-radius: 3px; background: #238636; color: #fff; font-weight: 700; }
-  .quest-desc { font-size: 0.75rem; color: #8b949e; margin: 0 0 0.2rem; line-height: 1.3; }
-  .quest-meta { font-size: 0.7rem; color: #6e7681; }
-
-  .actions-section h3 { margin: 0 0 0.4rem; font-size: 0.8rem; color: #8b949e; }
-  .action-buttons-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.35rem; }
-  .btn-quick { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 0.45rem 0.2rem; font-size: 0.75rem; font-weight: 700; border-radius: 4px; cursor: pointer; text-align: center; }
-  .btn-quick:hover { border-color: #58a6ff; color: #fff; }
-
-  /* CHAT PANEL */
-  .chat-panel { flex-shrink: 0; margin: 0 0.75rem 0.75rem; height: 210px; }
-  .tabs-header { display: flex; background: #0d1117; border-bottom: 1px solid #21262d; }
-  .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: #8b949e; padding: 0.5rem 0.9rem; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
-  .tab-btn.active { color: #58a6ff; border-bottom-color: #58a6ff; background: #161b22; }
-
-  .chat-viewport { flex: 1; padding: 0.6rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; font-family: monospace; }
-  .chat-row { display: flex; gap: 0.4rem; }
-  .msg-time { color: #6e7681; }
-  .msg-sender { color: #58a6ff; font-weight: 700; }
-  .chat-row.error .msg-sender, .chat-row.error .msg-text { color: #f85149; }
-  .chat-row.dialogue .msg-text { color: #e3b341; }
-  .chat-row.combat .msg-text { color: #f78166; }
-  .empty-chat { color: #6e7681; font-style: italic; }
-
-  .chat-input-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; border-top: 1px solid #21262d; background: #0d1117; }
-  .channel-indicator { font-size: 0.75rem; font-weight: 700; color: #58a6ff; }
-  .chat-input-bar input { flex: 1; background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: 0.4rem 0.6rem; color: #f0f6fc; outline: none; }
-  .btn-send { background: #238636; border: none; color: #fff; padding: 0.4rem 0.8rem; border-radius: 4px; font-weight: 700; cursor: pointer; }
-
-  /* DIALOGUE MODAL */
-  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
-  .dialogue-card { background: #161b22; border: 1px solid #58a6ff; border-radius: 8px; width: 420px; padding: 1.5rem; box-shadow: 0 16px 48px rgba(0,0,0,0.8); }
-  .dialogue-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-  .dialogue-header h3 { margin: 0; font-size: 1.1rem; color: #58a6ff; }
-  .btn-close { background: none; border: none; color: #8b949e; font-size: 1.1rem; cursor: pointer; }
-  .dialogue-speech { white-space: pre-wrap; font-size: 1rem; line-height: 1.5; color: #e3b341; font-style: italic; margin-bottom: 1.5rem; }
-  .action-error { background: #3b171b; color: #ffb4b0; padding: 0.5rem 1rem; }
-  .group-status { color: #3fb950; overflow-wrap: anywhere; }
-  .msg-text, .entity-name, .item-name { overflow-wrap: anywhere; min-width: 0; }
-  .msg-text { white-space: pre-wrap; }
-  .npc-buttons { flex-wrap: wrap; justify-content: flex-end; }
-  .connect-card, .dialogue-card { max-width: calc(100vw - 2rem); }
-  .modal-backdrop { padding: 1rem; overflow-y: auto; }
-  .dialogue-card { max-height: calc(100vh - 2rem); overflow-y: auto; }
-  .connect-overlay { min-height: 100vh; height: auto; padding: 1rem 0; }
-  @media (max-width: 1000px) {
-    .entities-grid { grid-template-columns: 1fr; }
-    .top-bar, .stats-badges { flex-wrap: wrap; gap: 0.5rem; }
-    .entity-card { min-height: 100px; }
-    .action-buttons-grid { grid-template-columns: repeat(3, 1fr); }
-  }
-  @media (max-width: 700px), (max-height: 650px) {
-    .app-container { height: auto; min-height: 100vh; }
-    .game-grid { grid-template-columns: 1fr; }
-    .room-panel, .status-panel { overflow: visible; }
-    .inventory-list, .quests-list { max-height: 250px; flex: auto; }
-    .chat-panel { height: 260px; }
-    .tabs-header { flex-wrap: wrap; }
-    .connect-card { padding: 1.5rem; }
-  }
-</style>

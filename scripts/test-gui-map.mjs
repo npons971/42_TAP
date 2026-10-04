@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import { buildLocalMap, buildLocalMarkers } from '../Project/client-gui/frontend/src/local-map.js';
+
+const room = {id: 'custom.start', exits: {east: 'custom.market', north: 'custom.garden', west: 'custom.alley'}};
+const nodes = buildLocalMap(room, {'custom.market': 'Marketplace'});
+assert.equal(nodes.length, 3);
+assert.equal(nodes[0].destination, 'custom.market');
+assert.equal(nodes[0].label, 'Marketplace');
+assert.equal(nodes[0].visited, true);
+assert.equal(nodes[1].visited, false);
+assert.ok(nodes[0].x > 450 && nodes[1].y < 200 && nodes[2].x < 450, 'Compass orientation reflects exits');
+assert.deepEqual(buildLocalMap({exits: {}}), [], 'A dead end must not invent paths');
+assert.deepEqual(buildLocalMap({}), [], 'Room loading is safe');
+const aliases = buildLocalMap({exits: {portal: 'loc.shared', north: 'loc.shared', up: 'loc.attic', northeast: 'loc.tower', down: 'loc.cellar', southwest: 'loc.cave'}});
+assert.equal(aliases.length, 6, 'Two routes to the same place remain independently usable');
+assert.ok(aliases.find(node => node.direction === 'north').y < 200, 'Custom direction does not consume the north slot');
+assert.equal(new Set(aliases.map(node => `${node.x},${node.y}`)).size, 6, 'Vertical and compass exits do not overlap');
+const many = buildLocalMap({exits: Object.fromEntries(Array.from({length: 12}, (_, i) => [`path${i}`, `custom.${i}`]))});
+assert.equal(many.length, 12);
+assert.equal(new Set(many.map(node => `${node.x},${node.y}`)).size, 12);
+for (const node of many) assert.ok(Number.isFinite(node.x) && Number.isFinite(node.y) && node.x > 0 && node.x < 900 && node.y > 0 && node.y < 400);
+assert.equal(buildLocalMap({exits: {NORTH: 'loc.new_room'}})[0].label, 'new room');
+assert.ok(buildLocalMap({exits: {NORTH: 'loc.new_room'}})[0].y < 200);
+assert.equal(buildLocalMap({exits: {east: 'toString'}})[0].label, 'toString', 'Room IDs never resolve to inherited object properties');
+
+const markerRoom = {npcs: [{id: 'enemy', role: 'enemy'}, {id: 'giver', role: 'quest_giver'}], items: [{id: 'fixed', obtainable: false}, {id: 'loot', obtainable: true}]};
+const markers = buildLocalMarkers(markerRoom);
+assert.deepEqual(markers.map(marker => marker.icon), ['sword', 'flag', 'landmark', 'bag']);
+assert.deepEqual(markers.map(marker => marker.kind), ['npc', 'npc', 'item', 'item']);
+assert.deepEqual(markerRoom.npcs[0], {id: 'enemy', role: 'enemy'}, 'Map layout does not mutate server entities');
+assert.equal(buildLocalMarkers({items: Array.from({length: 20}, (_, i) => ({id: String(i)}))}).length, 6, 'Extra entities remain in Nearby without overcrowding the map');
+assert.deepEqual(buildLocalMarkers({}), []);
+console.log('GUI map: server-derived paths, compass orientation, duplicate destinations, vertical/custom exits, dense exits, markers and empty rooms passed.');

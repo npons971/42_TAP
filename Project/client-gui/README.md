@@ -9,7 +9,7 @@ make gui
 Cette commande prépare les outils locaux, installe le frontend depuis son
 lockfile, compile le client puis ouvre la fenêtre. Si aucun serveur TAP
 n'écoute sur `127.0.0.1:4242`, elle démarre le serveur du dépôt avec
-`data/world.json`. Choisissez un pseudo puis cliquez sur **CONNECT & PLAY**.
+`data/world.json`. Choisissez un pseudo puis cliquez sur **Start**.
 Le serveur démarré par le lanceur s'arrête à la fermeture du GUI ; un serveur
 qui existait déjà continue de fonctionner. Les journaux du serveur local sont
 dans `.build/gui-server.log`. Fermer le serveur remet le monde à son état initial.
@@ -48,6 +48,26 @@ Les outils ne lancent aucune commande d'administration système.
 Une session graphique est nécessaire pour ouvrir la fenêtre.
 
 ## Commandes de jeu
+
+Le GUI utilise huit couleurs rétro contrastées sur un fond ivoire, une police
+bitmap locale et des cadres doubles. Le login est un écran titre avec le
+pseudo, le serveur, le port et le bouton **Start**. Les menus sont textuels,
+avec un curseur et les raccourcis indiqués à droite.
+La vue principale affiche une carte locale des sorties de la salle, avec votre
+position au centre. La carte adopte une vue de dessus inspirée des anciens
+Pokémon : terrain uni, chemins clairs et quelques arbres. Les personnages
+et objets apparaissent sous forme de petits sprites ; un point d'exclamation
+signale les donneurs de quêtes. Les personnages, objets et joueurs sont présentés dans
+trois colonnes simultanées sous la carte, sans onglets. Cliquez sur une
+destination pour vous déplacer ou sur un repère pour sélectionner et atteindre
+la fiche d'un personnage ou d'un objet. La carte peut
+être agrandie et refermée avec Échap. Elle utilise les données de LOOK ; le
+décor est stylisé, les positions ne sont pas des coordonnées géographiques.
+Les noms des lieux visités sont mémorisés pendant la session.
+
+Le **Menu** propose LOOK, STATUS, QUESTS, WHO et GROUP avec
+infobulles. Les touches **1–5** déclenchent les mêmes actions hors
+champs de saisie, dialogues et carte agrandie.
 
 L'interface propose les déplacements, TAKE/DROP/USE, TALK/QUEST, ATTACK/DEFEND/FLEE,
 les quêtes et leur progression, les groupes CREATE/INVITE/JOIN/LEAVE et les chats

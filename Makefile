@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install install-webkit clean build build-server run-server run-all build-cli run-cli test lint gui run-gui dev-gui build-gui check-gui build-frontend frontend-deps fetch-webkit
+.PHONY: help install install-webkit clean build build-server run-server run-all build-cli run-cli test lint gui run-gui dev-gui build-gui check-gui build-frontend frontend-deps fetch-webkit test-server test-client test-integration test-gui test-cli-pty test-all
 
 PROJECT_ROOT := $(CURDIR)
 GO := $(PROJECT_ROOT)/go
@@ -82,6 +82,7 @@ test: go cc frontend-deps
 	$(OUTPUT) run 'Tests Go serveur et CLI (race)' env CGO_ENABLED=1 CC="$(PROJECT_ROOT)/cc" $(GO) test -race -count=1 -timeout=120s ./...
 	$(OUTPUT) run 'Tests Go du backend GUI (race, sans fenêtre)' bash scripts/check-code.sh test-gui
 	$(OUTPUT) run 'Régressions du protocole frontend' $(NODE) scripts/test-gui-protocol.mjs
+	$(OUTPUT) run 'Régressions de la carte locale' $(NODE) scripts/test-gui-map.mjs
 	$(OUTPUT) run 'Compilation du frontend' $(NPM) --prefix $(GUI_DIR)/frontend run build
 	@$(OUTPUT) say 'Tous les tests ont réussi'
 
@@ -98,6 +99,23 @@ $(GUI_DIR)/frontend/node_modules/.tap-installed: $(GUI_DIR)/frontend/package.jso
 
 build-frontend: frontend-deps
 	$(OUTPUT) run 'Compilation du frontend' ./npm --prefix Project/client-gui/frontend run build
+
+test-server: go cc
+	$(OUTPUT) run 'Tests Go serveur (race)' env CGO_ENABLED=1 CC="$(PROJECT_ROOT)/cc" $(GO) test -race -count=1 -timeout=120s ./internal/server
+
+test-client: go cc
+	$(OUTPUT) run 'Tests Go du backend GUI (race, sans fenêtre)' bash scripts/check-code.sh test-gui
+
+test-integration: test-client
+
+test-gui: test-client build-frontend
+	$(OUTPUT) run 'Régressions du protocole frontend' $(NODE) scripts/test-gui-protocol.mjs
+	$(OUTPUT) run 'Régressions de la carte locale' $(NODE) scripts/test-gui-map.mjs
+
+test-cli-pty: go cc
+	$(OUTPUT) run 'Tests du terminal CLI (race)' env CGO_ENABLED=1 CC="$(PROJECT_ROOT)/cc" $(GO) test -race -count=1 -timeout=120s ./cmd/client-cli -run '^TestCLITerminal$$'
+
+test-all: test
 
 install: go npm gcc wails install-webkit
 	@$(OUTPUT) say 'Outils locaux prêts — make help pour les commandes'
