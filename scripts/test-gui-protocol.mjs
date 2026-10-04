@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../Project/client-gui/frontend/src/App.svelte', import.meta.url), 'utf8');
 const script = source.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1]
   .replace(/import\s*[\s\S]*?\sfrom\s*['"]svelte['"];?/g, '')
-  .replace(/import\s+(?:RoomMap|Icon)\s+from\s*['"][^'"]+['"];?/g, '');
+  .replace(/import\s+\w+\s+from\s*['"][^'"]+\.svelte['"];?/g, '');
 const sent = [];
 const timers = new Map();
 let nextTimer = 0;
@@ -88,8 +88,12 @@ assert.match(source, /callGroup\(["']CREATE["']/);
 assert.match(source, /callGroup\(["']JOIN["']/);
 assert.doesNotMatch(source, /callGroup\(["']ACCEPT["']/);
 resetCalls();
-run(`handleServerOK('Hello traveler!', 'TALK')`);
+run(`mapExpanded = true; handleServerOK('Hello traveler!', 'TALK')`);
 assert.equal(run('activeDialogue.text'), 'Hello traveler!');
+assert.equal(run('mapExpanded'), false, 'a delayed TALK reply releases the expanded map focus trap');
+run(`mapExpanded = true; handleServerOK('{"npc":"Guard","dialogue":["Stay safe."]}', 'TALKJSON')`);
+assert.equal(run('activeDialogue.text'), 'Stay safe.');
+assert.equal(run('mapExpanded'), false, 'a delayed TALKJSON reply releases the expanded map focus trap');
 await expectRefresh(['Quests'], 'dialogue');
 resetCalls();
 await run(`callUse('item.apple')`);
@@ -188,13 +192,11 @@ for (const guard of ['event.repeat = true', 'event.isComposing = true', 'event.c
 run(`activeDialogue = null; showGroupModal = false; mapExpanded = false; connected = true; handleGameShortcut({key:'5',target:{closest:()=>null},preventDefault:()=>{}})`);
 assert.equal(run('showGroupModal'), true);
 run(`selectMapEntity('item', 'item.fountain')`);
-assert.equal(run('nearbyTab'), 'item');
 assert.equal(run('selectedEntity'), 'item.fountain');
 run(`handleServerOK('{"room":{"id":"loc.other","name":"Other","exits":{}},"items":[],"npcs":[],"players":[]}', 'LOOK')`);
 assert.equal(run('selectedEntity'), '', 'room changes clear old marker selection');
 run(`resetSession()`);
 assert.equal(run('mapExpanded'), false);
-assert.equal(run('nearbyTab'), 'npc');
 assert.equal(run('Object.keys(roomNames).length'), 0, 'discovered map labels do not leak into a new server session');
 
 console.log('GUI protocol: fallback, combat, groups, quests, Unicode validation, connection setup, network errors, logs, hotkeys, map selection and session reset passed.');

@@ -42,17 +42,17 @@ export function buildLocalMarkers(room) {
     ...(room.npcs || []).map(entity => ({...entity, kind: 'npc', icon: entity.role === 'enemy' ? 'sword' : entity.role === 'quest_giver' ? 'flag' : 'person'})),
     ...(room.items || []).map(entity => ({...entity, kind: 'item', icon: entity.obtainable ? 'bag' : 'landmark'})),
   ];
-  const spots = [[355, 193], [545, 193], [360, 244], [540, 244], [392, 147], [508, 147]];
+  const spots = [[325, 130], [575, 130], [325, 200], [575, 200], [325, 270], [575, 270]];
   return markers.slice(0, spots.length).map((marker, index) => ({...marker, x: spots[index][0], y: spots[index][1]}));
 }
 
 // Decorative palettes follow the server's prose; they do not add world paths.
 export function getMapAppearance(room) {
   const prose = `${room.name || ''} ${room.description || ''}`;
-  if (/sewer|cellar|cave|subterranean|underground/i.test(prose)) return {kind: 'underground', ground: '#303e45', floor: '#59666a'};
-  if (/ruin|bastion|fortification|vault/i.test(prose)) return {kind: 'ruins', ground: '#45483b', floor: '#7c7765'};
-  if (/garden|willow|wild greenery/i.test(prose)) return {kind: 'garden', ground: '#3e6045', floor: '#698258'};
-  if (/tavern|hearth|innkeeper/i.test(prose)) return {kind: 'interior', ground: '#4c4236', floor: '#837355'};
-  if (/square|market|street|alley|village/i.test(prose)) return {kind: 'settlement', ground: '#344e41', floor: '#697263'};
-  return {kind: 'wilds', ground: '#344e41', floor: '#697263'};
+  if (/sewer|cellar|cave|subterranean|underground/i.test(prose)) return 'underground';
+  if (/ruin|bastion|fortification|vault/i.test(prose)) return 'ruins';
+  if (/garden|willow|wild greenery/i.test(prose)) return 'garden';
+  if (/tavern|hearth|innkeeper/i.test(prose)) return 'interior';
+  if (/square|market|street|alley|village/i.test(prose)) return 'settlement';
+  return 'wilds';
 }

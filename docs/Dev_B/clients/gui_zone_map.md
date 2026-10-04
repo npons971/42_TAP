@@ -38,9 +38,8 @@ Captures du frontend compilé dans WebKitGTK 4.1, avec un backend simulé basé 
 `data/world.json`. Les connexions TCP réelles sont validées séparément par les
 tests du client.
 
-- [Carte locale et actions, 1280 × 800](gui-zone-map/world.png)
-- [Jardin, inventaire et quête, 1280 × 800](gui-zone-map/garden.png)
-- [Petite fenêtre, 480 px](gui-zone-map/narrow.png)
+Les captures de cet essai ont été remplacées par celles de
+l'[interface rétro retenue](gui_retro.md#aperçus).
 
 ## Validation
 

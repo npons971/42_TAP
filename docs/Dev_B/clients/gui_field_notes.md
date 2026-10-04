@@ -27,9 +27,8 @@ Captures du frontend compilé dans WebKitGTK 4.1, avec réponses Wails simulées
 partir de `data/world.json`. Elles illustrent le rendu ; la validation TCP est
 couverte séparément par les tests du client.
 
-- [Accueil, 1280 × 800](gui-field-notes/arrival.png)
-- [Jeu avec inventaire et quête, 1280 × 800](gui-field-notes/adventure.png)
-- [Vue étroite, 480 px](gui-field-notes/narrow.png)
+Les captures de cet essai ont été remplacées par celles de
+l'[interface rétro retenue](gui_retro.md#aperçus).
 
 ## Validation
 

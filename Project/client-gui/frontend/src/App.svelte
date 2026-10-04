@@ -2,6 +2,8 @@
   import { onMount, tick } from 'svelte';
   import RoomMap from './RoomMap.svelte';
   import Icon from './Icon.svelte';
+  import Nearby from './Nearby.svelte';
+  import PixelSprite from './PixelSprite.svelte';
 
   // Connection State
   let connected = false;
@@ -27,7 +29,6 @@
 
   // Room names mapping for intuitive navigation
   let roomNames = {};
-  let nearbyTab = 'npc';
   let selectedEntity = '';
   let mapExpanded = false;
 
@@ -107,7 +108,6 @@
     connecting = false;
     currentRoom = emptyRoom();
     roomNames = {};
-    nearbyTab = 'npc';
     selectedEntity = '';
     mapExpanded = false;
     inventory = [];
@@ -189,7 +189,6 @@
         if (data.room && !Array.isArray(data.room) && data.room.id) {
           if (currentRoom.id !== data.room.id) {
             selectedEntity = '';
-            nearbyTab = data.npcs?.length ? 'npc' : data.items?.length ? 'item' : 'player';
           }
           currentRoom = {
             id: data.room.id || "unknown",
@@ -235,6 +234,7 @@
         // TALK payload
         if (data.npc && data.dialogue) {
           const text = Array.isArray(data.dialogue) ? data.dialogue.join("\n") : String(data.dialogue);
+          mapExpanded = false;
           activeDialogue = { npc: data.npc, text };
           addMessage("room", data.npc, text, "dialogue");
           return;
@@ -246,6 +246,7 @@
 
     // Key-value OK responses: OK room=loc.market, OK taken=item.apple, etc.
     if (command === "TALK") {
+      mapExpanded = false;
       activeDialogue = {npc: "NPC", text: payload};
       addMessage("room", "NPC", payload, "dialogue");
     } else if (payload.startsWith("players=")) {
@@ -394,15 +395,12 @@
 
   const callMove = direction => invoke("Move", direction);
   const callLook = () => invoke("Look");
-  const callTake = id => invoke("Take", id);
   const callDrop = id => invoke("Drop", id);
-  const callTalk = id => invoke("Talk", id);
   const callAttack = id => invoke("Attack", id);
   const callInventory = () => invoke("Inventory");
   const callStatus = () => invoke("Status");
   const callQuests = () => invoke("Quests");
   const callWho = () => invoke("Who");
-  const callQuest = id => invoke("Quest", id);
   const callUse = id => invoke("SendCommand", "USE " + id);
   const callDefend = () => invoke("SendCommand", "DEFEND");
   const callFlee = () => invoke("SendCommand", "FLEE");
@@ -422,9 +420,9 @@
   function handleKeyDown(e) {
     if (e.key === "Enter" && !e.isComposing) handleSendMessage();
   }
-  function selectMapEntity(kind, id) {
-    nearbyTab = kind;
+  function selectMapEntity(_kind, id) {
     selectedEntity = id;
+    tick().then(() => globalThis.document?.getElementById('nearby-' + id)?.focus());
   }
   function handleGameShortcut(event) {
     if (!connected || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || activeDialogue || showGroupModal || mapExpanded) return;
@@ -440,24 +438,14 @@
   {#if !connected}
     <!-- CONNECTION SCREEN -->
     <div class="connect-overlay">
-      <section class="welcome-panel" aria-label="The Answer Protocol">
-        <div class="welcome-brand"><span class="brand-mark">42</span><span>THE ANSWER PROTOCOL</span></div>
-        <div class="welcome-story">
-          <span class="eyebrow">A SHARED WORLD. YOUR OWN PATH.</span>
-          <h1>Every answer begins<br />with an adventure.</h1>
-          <p>Wander unfamiliar streets, meet fellow travelers and uncover the stories waiting beyond the next turn.</p>
-          <img class="welcome-compass" src="/compass.svg" alt="" />
-        </div>
-        <div class="welcome-footer"><span>EXPLORE · DISCOVER · CONNECT</span><span>A TEXT ADVENTURE BY 42</span></div>
-      </section>
       <div class="connect-card">
-        <div class="eyebrow">YOUR NEXT CHAPTER</div>
-        <h2 class="connect-title">Step into the world.</h2>
-        <p class="subtitle">Pick a name. Find your people. See where the road takes you.</p>
+        <h1 class="connect-title">42 TAP</h1>
+        <p class="connect-subtitle">A LITTLE TEXT ADVENTURE</p>
+        <div class="title-sprite"><PixelSprite name="hero" size={48} /></div>
 
         <form class="connect-form" on:submit|preventDefault={handleConnect}>
           <div class="form-group username-field">
-            <label for="username">Adventurer name</label>
+            <label for="username">Player name</label>
             <input id="username" type="text" bind:value={username} placeholder="e.g. aris" required disabled={connecting} autocomplete="username" aria-describedby="username-hint" />
             <small id="username-hint">3–20 lowercase letters, digits or underscores.</small>
           </div>
@@ -478,90 +466,53 @@
           {/if}
 
           <button class="btn-primary" type="submit" disabled={connecting}>
-            <span>{connecting ? "Connecting…" : "Begin adventure"}</span><span aria-hidden="true">↗</span>
+            {connecting ? "Connecting…" : "Start"}
           </button>
         </form>
-        <div class="connect-note"><span class="note-star" aria-hidden="true">✧</span> A world best discovered together.</div>
       </div>
     </div>
   {:else}
     <!-- ACTIVE GAME INTERFACE -->
     <header class="top-bar">
       <div class="brand">
-        <span class="brand-mark">42</span>
-        <div><span class="realm-title">THE ANSWER PROTOCOL</span><span class="server-address"><span class="pulse-dot"></span>{host}:{port}</span></div>
+        <span class="brand-mark">42 TAP</span>
+        <span class="server-address">{host}:{port}</span>
       </div>
 
       <div class="stats-badges">
-        <span class="badge room-badge"><strong>{roomPlayersCount}</strong> in this room</span>
-        <span class="badge server-badge"><span class="pulse-dot"></span><strong>{serverPlayersCount}</strong> online</span>
+        <span class="badge room-badge">Room: {roomPlayersCount}</span>
+        <span class="badge server-badge">Online: {serverPlayersCount}</span>
       </div>
 
-      <button class="btn-disconnect" on:click={handleDisconnect}>Leave world <span aria-hidden="true">↗</span></button>
+      <button class="btn-disconnect" on:click={handleDisconnect}>Quit</button>
     </header>
 
-    <div class="chapter-bar"><span class="eyebrow">WORLD EXPLORATION</span><span>Follow the paths. Discover what lies beyond.</span></div>
     {#if actionError}<div class="action-error" role="alert">{actionError}</div>{/if}
     <div class="game-grid">
       <!-- Map and local interactions are driven exclusively by LOOK data. -->
       <section class="panel room-panel">
         <div class="panel-header location-header">
-          <div><span class="eyebrow">EXPLORATION</span><h2 class="room-name">{currentRoom.name}</h2></div>
-          <span class="location-paths"><Icon name="map" size={16} /> {Object.keys(currentRoom.exits).length} paths</span>
+          <h2 class="room-name">{currentRoom.name}</h2>
         </div>
         <RoomMap room={currentRoom} names={roomNames} {username} inCombat={combatState === 'EN_COMBAT'} onmove={callMove} onselect={selectMapEntity} bind:expanded={mapExpanded} />
-        <div class="location-caption"><Icon name="pin" size={18} /><p class="room-desc" title={currentRoom.description}>{currentRoom.description || 'Discovering your surroundings…'}</p></div>
-        <div class="surroundings-header">
-          <span class="eyebrow">NEARBY</span>
-          <div class="nearby-tabs" aria-label="Surroundings">
-            <button class:active={nearbyTab === 'npc'} aria-pressed={nearbyTab === 'npc'} on:click={() => nearbyTab = 'npc'}><Icon name="person" size={14} /> Characters <span class="count">{currentRoom.npcs.length}</span></button>
-            <button class:active={nearbyTab === 'item'} aria-pressed={nearbyTab === 'item'} on:click={() => nearbyTab = 'item'}><Icon name="bag" size={14} /> Objects <span class="count">{currentRoom.items.length}</span></button>
-            <button class:active={nearbyTab === 'player'} aria-pressed={nearbyTab === 'player'} on:click={() => nearbyTab = 'player'}><Icon name="users" size={14} /> Travelers <span class="count">{currentRoom.players.length}</span></button>
-          </div>
-        </div>
-        <div class="nearby-content">
-          {#if nearbyTab === 'npc'}
-            {#each currentRoom.npcs as npc}
-              <div class="nearby-card" class:selected={selectedEntity === npc.id}>
-                <span class="nearby-icon" class:hostile={npc.role === 'enemy'}><Icon name={npc.role === 'enemy' ? 'sword' : npc.role === 'quest_giver' ? 'flag' : 'person'} size={22}/></span>
-                <div class="nearby-detail"><strong>{npc.name}</strong><span>{npc.description || (npc.role === 'enemy' ? 'Hostile creature' : npc.role === 'quest_giver' ? 'Has a quest for you' : 'Available to talk')}</span></div>
-                <div class="npc-buttons">
-                  {#if npc.role !== 'enemy'}<button class="btn-action btn-talk" disabled={combatState === 'EN_COMBAT'} on:click={() => callTalk(npc.id)}>Talk <Icon name="arrow" size={12}/></button>{/if}
-                  {#if npc.role === 'quest_giver' || npc.unknownRole}<button class="btn-action btn-take" disabled={combatState === 'EN_COMBAT'} on:click={() => callQuest(npc.id)}>Quest <Icon name="flag" size={12}/></button>{/if}
-                  {#if npc.role === 'enemy' || npc.unknownRole}<button class="btn-action btn-attack" on:click={() => callAttack(npc.id)}>Attack <Icon name="sword" size={12}/></button>{/if}
-                </div>
-              </div>
-            {:else}<div class="empty-list">No characters nearby. Choose a path to keep exploring.</div>{/each}
-          {:else if nearbyTab === 'item'}
-            {#each currentRoom.items as item}
-              <div class="nearby-card" class:selected={selectedEntity === item.id}>
-                <span class="nearby-icon"><Icon name={item.obtainable ? 'bag' : 'landmark'} size={22}/></span>
-                <div class="nearby-detail"><strong>{item.name}</strong><span>{item.description || (item.obtainable ? 'You can pick this up' : 'Part of the surroundings')}</span></div>
-                {#if item.obtainable}<button class="btn-action btn-take" disabled={combatState === 'EN_COMBAT'} on:click={() => callTake(item.id)}>Take <Icon name="bag" size={12}/></button>{:else}<span class="scenery-tag">Scenery</span>{/if}
-              </div>
-            {:else}<div class="empty-list">No objects to collect in this location.</div>{/each}
-          {:else}
-            {#each currentRoom.players as player}
-              <div class="nearby-card"><span class="nearby-icon"><Icon name="person" size={22}/></span><div class="nearby-detail"><strong>{player}</strong><span>{player === username ? 'You · exploring this location' : 'Fellow adventurer'}</span></div><span class="player-dot"></span></div>
-            {:else}<div class="empty-list">No other travelers in this location.</div>{/each}
-          {/if}
-        </div>
+        <div class="location-caption"><p class="room-desc" title={currentRoom.description}>{currentRoom.description || 'Discovering your surroundings…'}</p></div>
+        <Nearby room={currentRoom} {username} {selectedEntity} inCombat={combatState === 'EN_COMBAT'} onaction={invoke} />
       </section>
 
       <!-- RIGHT COLUMN: PLAYER STATUS & INVENTORY -->
       <aside class="panel status-panel">
         <div class="panel-header">
-          <h2><span class="section-number">02</span> ADVENTURER</h2>
+          <h2>PLAYER</h2>
           <span class="status-tag {combatState === 'EN_COMBAT' ? 'in-combat' : 'out-combat'}">
             {combatState === 'EN_COMBAT' ? 'In combat' : 'Exploring'}
           </span>
         </div>
 
-        <div class="character-summary"><span class="avatar" aria-hidden="true">{username.slice(0, 1).toUpperCase()}</span><div><strong>{username}</strong><span>Your adventure is unfolding.</span></div></div>
+        <div class="character-summary"><span class="avatar"><PixelSprite name="hero" size={32}/></span><strong>{username}</strong></div>
         <div class="vitality-box">
           <div class="hp-header">
-            <span>Vitality</span>
-            <span class="hp-numbers">{playerHP} / {playerMaxHP} HP</span>
+            <span>HP</span>
+            <span class="hp-numbers">{playerHP}/{playerMaxHP}</span>
           </div>
           <div class="hp-bar-bg" role="progressbar" aria-label="Health points" aria-valuenow={playerHP} aria-valuemin={0} aria-valuemax={playerMaxHP}>
             <div class="hp-bar-fill" style="width: {Math.max(0, Math.min(100, (playerHP / playerMaxHP) * 100))}%"></div>
@@ -583,8 +534,8 @@
 
         <div class="inventory-section">
           <div class="panel-header-sub">
-            <h3>Satchel <span class="count">{inventory.length}</span></h3>
-            <button class="btn-tiny" on:click={callInventory} aria-label="Refresh inventory">↻</button>
+            <h3>Inventory <span class="count">{inventory.length}</span></h3>
+            <button class="btn-tiny" on:click={callInventory} aria-label="Refresh inventory"><Icon name="refresh" size={16}/></button>
           </div>
           <div class="inventory-list">
             {#each inventory as item}
@@ -597,7 +548,7 @@
               </div>
             {/each}
             {#if inventory.length === 0}
-              <div class="empty-list">Traveling light.<br />Collected items will appear here.</div>
+              <div class="empty-list">Inventory empty.</div>
             {/if}
           </div>
         </div>
@@ -605,8 +556,8 @@
         <!-- ACTIVE QUESTS TRACKER -->
         <div class="quests-section">
           <div class="panel-header-sub">
-            <h3>Quest journal <span class="count">{quests.length}</span></h3>
-            <button class="btn-tiny" on:click={callQuests} aria-label="Refresh quests">↻</button>
+            <h3>Quests <span class="count">{quests.length}</span></h3>
+            <button class="btn-tiny" on:click={callQuests} aria-label="Refresh quests"><Icon name="refresh" size={16}/></button>
           </div>
           <div class="quests-list">
             {#each quests as q}
@@ -623,20 +574,20 @@
               </div>
             {/each}
             {#if quests.length === 0}
-              <div class="empty-list">A story waiting to be written.<br />Talk to characters to discover quests.</div>
+              <div class="empty-list">Talk to a quest giver.</div>
             {/if}
           </div>
         </div>
 
         <!-- QUICK ACTION BUTTONS -->
         <div class="actions-section">
-          <div class="hotbar-heading"><h3>QUICK ACTIONS</h3><span>1 — 5</span></div>
+          <div class="hotbar-heading"><h3>MENU</h3></div>
           <div class="action-buttons-grid">
-            <button class="btn-quick" on:click={callLook} title="Inspect and refresh your surroundings (1)" aria-keyshortcuts="1"><kbd>1</kbd><Icon name="eye" size={22}/><span>Look</span></button>
-            <button class="btn-quick" on:click={callStatus} title="Refresh your health and combat state (2)" aria-keyshortcuts="2"><kbd>2</kbd><Icon name="heart" size={22}/><span>Status</span></button>
-            <button class="btn-quick" on:click={callQuests} title="Refresh your quest journal (3)" aria-keyshortcuts="3"><kbd>3</kbd><Icon name="book" size={22}/><span>Quests</span></button>
-            <button class="btn-quick" on:click={callWho} title="Refresh the players in your room and online (4)" aria-keyshortcuts="4"><kbd>4</kbd><Icon name="users" size={22}/><span>Players</span></button>
-            <button class="btn-quick party-action" on:click={() => showGroupModal = true} title="Create, join or manage your party (5)" aria-keyshortcuts="5"><kbd>5</kbd><Icon name="flag" size={22}/><span>Party</span></button>
+            <button class="btn-quick" on:click={callLook} title="Inspect and refresh your surroundings (1)" aria-keyshortcuts="1"><span>Look</span><kbd>1</kbd></button>
+            <button class="btn-quick" on:click={callStatus} title="Refresh your health and combat state (2)" aria-keyshortcuts="2"><span>Status</span><kbd>2</kbd></button>
+            <button class="btn-quick" on:click={callQuests} title="Refresh your quest journal (3)" aria-keyshortcuts="3"><span>Quests</span><kbd>3</kbd></button>
+            <button class="btn-quick" on:click={callWho} title="Refresh the players in your room and online (4)" aria-keyshortcuts="4"><span>Players</span><kbd>4</kbd></button>
+            <button class="btn-quick party-action" on:click={() => showGroupModal = true} title="Create, join or manage your party (5)" aria-keyshortcuts="5"><span>Party</span><kbd>5</kbd></button>
           </div>
         </div>
       </aside>
@@ -646,16 +597,16 @@
     <section class="panel chat-panel">
       <div class="tabs-header">
         <button class="tab-btn {activeTab === 'global' ? 'active' : ''}" on:click={() => activeTab = 'global'}>
-          World <span class="count">{messages.global.length}</span>
+          Global
         </button>
         <button class="tab-btn {activeTab === 'room' ? 'active' : ''}" on:click={() => activeTab = 'room'}>
-          Room <span class="count">{messages.room.length}</span>
+          Room
         </button>
         <button class="tab-btn {activeTab === 'group' ? 'active' : ''}" on:click={() => activeTab = 'group'}>
-          Party <span class="count">{messages.group.length}</span>
+          Party
         </button>
         <button class="tab-btn {activeTab === 'logs' ? 'active' : ''}" on:click={() => activeTab = 'logs'}>
-          System logs <span class="count">{messages.logs.length}</span>
+          Logs
         </button>
       </div>
 
@@ -668,7 +619,7 @@
           </div>
         {/each}
         {#if messages[activeTab].length === 0}
-          <div class="empty-chat">{activeTab === 'logs' ? 'Your journey’s events will appear here.' : 'Every adventure starts with a hello. Say something.'}</div>
+          <div class="empty-chat">{activeTab === 'logs' ? 'No events yet.' : 'No messages yet.'}</div>
         {/if}
       </div>
 
@@ -678,11 +629,11 @@
           type="text"
           aria-label="Chat message"
           disabled={activeTab === "logs"}
-          placeholder={activeTab === "logs" ? "System logs — read only" : "Type message and press Enter..."}
+          placeholder={activeTab === "logs" ? "Read only" : "Message..."}
           bind:value={chatInput}
           on:keydown={handleKeyDown}
         />
-        <button class="btn-send" disabled={activeTab === "logs" || !chatInput.trim()} on:click={handleSendMessage}>Send <span aria-hidden="true">↗</span></button>
+        <button class="btn-send" disabled={activeTab === "logs" || !chatInput.trim()} on:click={handleSendMessage}>Send</button>
       </div>
     </section>
 
@@ -692,10 +643,10 @@
         <div class="dialogue-card" role="dialog" aria-modal="true" aria-label="NPC Dialogue">
           <div class="dialogue-header">
             <h3>{activeDialogue.npc}</h3>
-            <button class="btn-close" aria-label="Close dialog" on:click={() => activeDialogue = null}>✕</button>
+            <button class="btn-close" aria-label="Close dialog" on:click={() => activeDialogue = null}><Icon name="close" size={16}/></button>
           </div>
           <p class="dialogue-speech">"{activeDialogue.text}"</p>
-          <button class="btn-primary" on:click={() => activeDialogue = null}>Continue <span aria-hidden="true">→</span></button>
+          <button class="btn-primary" on:click={() => activeDialogue = null}>Continue</button>
         </div>
       </div>
     {/if}
@@ -705,8 +656,8 @@
       <div class="modal-backdrop">
         <div class="dialogue-card" role="dialog" aria-modal="true" aria-label="Group Management">
           <div class="dialogue-header">
-            <h3>Better together.</h3>
-            <button class="btn-close" aria-label="Close party dialog" on:click={() => showGroupModal = false}>✕</button>
+            <h3>Party</h3>
+            <button class="btn-close" aria-label="Close party dialog" on:click={() => showGroupModal = false}><Icon name="close" size={16}/></button>
           </div>
           <p class="subtitle" style="margin-bottom: 1rem;">Create a party, invite a player, or enter a leader’s username to join.</p>
           {#if actionError}<div class="error-badge" role="alert">{actionError}</div>{/if}
