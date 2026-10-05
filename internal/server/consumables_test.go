@@ -61,7 +61,7 @@ func TestConsumablesTCP(t *testing.T) {
 	sendCommand(t, conn, "USE Fresh Apple")
 	expectLine(t, r, "ERR 409 HEALTH_FULL USE cannot restore HP: health is already full; item kept")
 	sendCommand(t, conn, "INVENTORY DETAILS")
-	expectLine(t, r, `OK [{"id":"item.apple","name":"Fresh Apple"}]`)
+	expectInventoryItems(t, r, map[string]string{"item.apple": "Fresh Apple"})
 	s.mu.Lock()
 	s.players["alice"].hp = 95
 	s.mu.Unlock()
@@ -101,7 +101,7 @@ func TestConsumablesTCP(t *testing.T) {
 	sendCommand(t, conn, "USE Rusty Sword")
 	expectLine(t, r, "ERR 405 ITEM_NOT_USABLE Item item.rusty_sword cannot be consumed with USE")
 	sendCommand(t, conn, "INVENTORY DETAILS")
-	expectLine(t, r, `OK [{"id":"item.rusty_sword","name":"Rusty Sword"}]`)
+	expectInventoryItems(t, r, map[string]string{"item.rusty_sword": "Rusty Sword"})
 }
 
 func TestConcurrentUseAndDrop(t *testing.T) {
@@ -189,7 +189,7 @@ func TestItemLifecycleMixedActions(t *testing.T) {
 		{username: "bob", roomID: "loc.market", hp: 25, outbox: make(chan string, 32)},
 	}
 	rooms := []string{"loc.garden", "loc.market", "loc.tavern", "loc.dark_alley", "loc.town_square"}
-	ids := []string{"item.apple", "item.ale", "item.rare_herbs", "item.vigor_potion", "item.ancient_key", "item.rusty_sword"}
+	ids := []string{"item.apple", "item.ale", "item.rare_herbs", "item.vigor_potion", "item.captains_shield", "item.rusty_sword"}
 	// Fixed seed makes regressions reproducible.
 	rng := rand.New(rand.NewSource(42))
 	consumed := map[string]bool{}

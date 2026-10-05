@@ -23,6 +23,31 @@ QUESTS liste les quêtes acceptées/terminées par quest_id croissant, avec
 status active/completed et progress 0/1 ou 1/1 pour une quête active. Une quête
 acceptée dont la récompense est attribuée à un autre joueur devient unavailable.
 QUESTS DETAILS liste aussi les définitions non commencées.
+Le journal GUI utilise cette extension et se replie sur QUESTS si le serveur
+la refuse. Les réponses standard QUESTS et QUEST gardent leur format RFC.
+QUESTS DETAILS et QUESTINFO indiquent le titre, la description, le donneur
+(giver/giver_name), son lieu (giver_location_id/giver_location_name), la
+récompense nommée (reward) et le soin à la remise (reward_hp_heal, omis si nul).
+QUESTINFO conserve également son objet objective pour les clients existants.
+
+Le champ steps détaille deux étapes ordonnées : FETCH puis DELIVER, ou DEFEAT
+puis REPORT. Chacune porte type, label, target_id, location_id, location_name
+et completed, avec un hint facultatif. La collecte ou la victoire personnelle
+coche uniquement la première étape ; le retour au donneur et l'attribution
+de la récompense cochent la seconde. Après livraison, les deux restent cochées
+même si l'ingrédient a été consommé. Une quête non commencée indique le donneur
+et son lieu pour guider son acceptation sans la commencer par simple lecture.
+
+Les noms et lieux sont issus du monde chargé. L'ingrédient déposé indique sa
+salle courante ; un ingrédient porté ou consommé conserve sa salle initiale
+comme contexte. S'il est porté par un autre joueur, hint précise qu'il n'est
+actuellement pas au sol. Un ingrédient partagé entre deux quêtes et déjà
+consommé indique qu'il a été livré et n'est plus disponible dans ce monde.
+Un ennemi déjà vaincu par un autre joueur sans victoire
+personnelle indique que le coup final devait être personnel et qu'il ne
+réapparaît pas. UNAVAILABLE interdit la remise lorsque la récompense unique
+a déjà été attribuée à un autre pseudo.
+
 Le suivi est conservé par pseudo pendant la vie du serveur et survit à une
 reconnexion. Il n'y a pas de stockage disque ni de mot de passe : un pseudo
 n'est pas une identité sécurisée ; ce choix correspond au protocole CONNECT.
@@ -43,7 +68,7 @@ IN_PROGRESS tant que l'objet n'est plus dans l'inventaire du joueur.
 1. TALK npc.guard_captain dans loc.ruins_gate accepte la quête.
 2. ATTACK npc.bandit_leader dans loc.ruins_den jusqu'à sa défaite enregistre
    la victoire pour le joueur ayant porté le coup final.
-3. TALK npc.guard_captain attribue item.ancient_key, une seule fois.
+3. TALK npc.guard_captain attribue item.captains_shield, une seule fois.
 
 Une victoire obtenue avant l'acceptation reste valide. Une fuite, la défaite
 du joueur ou la victoire d'un autre joueur ne constitue pas une preuve.

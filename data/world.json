@@ -75,7 +75,7 @@
           "south": "loc.sewers"
         },
         "items": [
-          "item.torch"
+          "item.healing_salve"
         ],
         "npcs": []
       },
@@ -152,22 +152,23 @@
       {
         "id": "item.rusty_sword",
         "name": "Rusty Sword",
-        "description": "An old iron blade with a weathered leather hilt. Though notched and rusted, it grants +10 attack damage.",
+        "description": "An old iron blade with a weathered leather hilt. While carried, it automatically grants +10 attack damage; only the strongest attack bonus applies.",
         "obtainable": true,
         "type": "weapon",
         "damage_bonus": 10
       },
       {
-        "id": "item.torch",
-        "name": "Wooden Torch",
-        "description": "A pitch-soaked wooden torch wrapped in heavy burlap. Provides warmth and illumination in dark chambers.",
+        "id": "item.healing_salve",
+        "name": "Healing Salve",
+        "description": "A jar of soothing medicinal salve. Consume it with USE outside combat to restore up to 25 HP.",
         "obtainable": true,
-        "type": "tool"
+        "type": "consumable",
+        "heal_value": 25
       },
       {
         "id": "item.wooden_shield",
         "name": "Battered Shield",
-        "description": "A sturdy wooden round shield reinforced with iron bands. Increases defense by 5.",
+        "description": "A sturdy wooden round shield reinforced with iron bands. Automatically reduces incoming combat damage by 5 while carried; only the strongest defense bonus applies.",
         "obtainable": true,
         "type": "armor",
         "defense_bonus": 5
@@ -194,11 +195,12 @@
         "type": "scenery"
       },
       {
-        "id": "item.ancient_key",
-        "name": "Ancient Key",
-        "description": "An intricate brass key engraved with arcane runes, awarded for defeating the bandit leader.",
+        "id": "item.captains_shield",
+        "name": "Captain's Shield",
+        "description": "A reinforced shield awarded for defeating the Bandit Leader. Automatically reduces incoming combat damage by 8 while carried; the strongest defense bonus applies.",
         "obtainable": true,
-        "type": "quest_reward",
+        "type": "armor",
+        "defense_bonus": 8,
         "initial_location": {
           "kind": "reserve"
         }
@@ -286,7 +288,7 @@
         "hostile": false,
         "dialogue": [
           "Greetings, traveler. I am preparing remedies for the injured guards, but my stock of rare herbs is depleted.",
-          "The overgrown garden behind the square holds rare medicinal herbs. Could you bring some to me?"
+          "Take the Rare Herbs here in the Overgrown Garden, then speak to me again to deliver them. I will give you a Vigor Potion and restore your health."
         ]
       },
       {
@@ -300,7 +302,7 @@
         "hostile": false,
         "dialogue": [
           "Halt! Beyond these gates lies the bandit hideout in the old ruins.",
-          "A sizable bounty awaits any brave adventurer who eliminates the Bandit Leader."
+          "Go north to the Cutthroat's Den and defeat the Bandit Leader. Land the final blow, then return here and speak to me to claim the Captain's Shield. A sword and shield will help you survive."
         ]
       },
       {
@@ -334,7 +336,7 @@
       "quest.herbal_cure": {
         "title": "The Apothecary's Remedy",
         "giver": "npc.herbalist",
-        "description": "Collect rare medicinal herbs from the overgrown garden and deliver them to the village herbalist.",
+        "description": "Collect Rare Herbs in the Overgrown Garden, north of Village Square. Then speak to the Village Herbalist in that garden to deliver them. You will receive a Vigor Potion and have up to 100 HP restored.",
         "type": "fetch_and_deliver",
         "target_item": "item.rare_herbs",
         "target_npc": "npc.herbalist",
@@ -345,12 +347,12 @@
       "quest.bandit_bounty": {
         "title": "Bounty on the Cutthroat",
         "giver": "npc.guard_captain",
-        "description": "Venture into the ancient ruins and defeat the notorious Bandit Leader threatening the region.",
+        "description": "Defeat the Bandit Leader in the Cutthroat's Den, north of Ruins Gate. You must land the final blow. Then return south and speak to the Guard Captain at Ruins Gate to receive the Captain's Shield.",
         "type": "defeat_and_report",
         "target_npc_defeat": "npc.bandit_leader",
         "target_npc_report": "npc.guard_captain",
-        "reward_item": "item.ancient_key",
-        "completion_dialogue": "Outstanding work! The roads are safe once again. Here is the Ancient Key to the stronghold crypt."
+        "reward_item": "item.captains_shield",
+        "completion_dialogue": "Outstanding work! The roads are safe once again. Take this Captain's Shield. It will protect you on your next adventure."
       }
     }
   }

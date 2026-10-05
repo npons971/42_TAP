@@ -47,7 +47,7 @@ GOPATH="$PWD/.go-work" GOCACHE="$PWD/.go-cache" ./go vet ./...
 
 Les blessures sont injectées sous verrou dans les tests ; aucune commande
 publique ne modifie arbitrairement les PV. Le combat et la progression complète sont désormais testés dans
-[aris_acceptance.md](aris_acceptance.md). TALK délivre aussi la clé après une
+[aris_acceptance.md](aris_acceptance.md). TALK délivre aussi le bouclier du capitaine après une
 victoire réelle enregistrée contre le bandit.
 
 ## Essai manuel

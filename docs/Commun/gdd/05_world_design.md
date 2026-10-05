@@ -91,7 +91,7 @@ graph TD
 - **Nom affiché** : Cave de la Taverne
 - **Description** : De gros tonneaux de chêne s'empilent dans l'ombre. De la poussière recouvre les bouteilles rangées sur les étagères. Un passage dérobé semble s'ouvrir vers le sud.
 - **Sorties** : `up: loc.tavern`, `south: loc.sewers`
-- **Objets initiaux** : Torche Éteinte (`item.torch`)
+- **Objets initiaux** : Baume de soin (`item.healing_salve`)
 - **PNJ présents** : *aucun*
 
 ### Salle 6 : Égouts Humides (`loc.sewers`)
@@ -190,8 +190,8 @@ Les livraisons fetch_and_deliver sont exécutées via TALK ; la progression est 
 la victoire enregistrée par le moteur de combat. Les réponses de `LOOK` restent limitées aux descripteurs du
 protocole ; ces attributs supplémentaires ne sont pas envoyés implicitement.
 
-`item.ancient_key` et `item.vigor_potion` commencent en réserve. La potion est attribuée une seule fois par monde lors de la livraison
-des herbes à l'herboriste ; la clé est attribuée après une victoire réelle sur le bandit et un rapport au capitaine. Les objets uniques ne sont pas dupliqués par cette intégration.
+`item.captains_shield` et `item.vigor_potion` commencent en réserve. La potion est attribuée une seule fois par monde lors de la livraison
+des herbes à l'herboriste ; le bouclier du capitaine est attribué après une victoire réelle sur le bandit et un rapport au capitaine. Les objets uniques ne sont pas dupliqués par cette intégration.
 
 La carte conserve les sorties dirigées de Novanns : `west` depuis la place
 mène à la ruelle, `south` depuis la ruelle retourne à la place et `east` depuis

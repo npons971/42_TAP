@@ -229,7 +229,7 @@ QUIT
 	if err := Run(context.Background(), conn, io.NopCloser(strings.NewReader(script)), out, false); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"OK hello proto=1", "EVT GROUP CHAT traveler hello", `"outcome":"victory"`, "EVT ROOM ITEM REWARD traveler item.ancient_key", `"status":"completed"`, `"item.ancient_key"`} {
+	for _, want := range []string{"OK hello proto=1", "EVT GROUP CHAT traveler hello", `"outcome":"victory"`, "EVT ROOM ITEM REWARD traveler item.captains_shield", `"status":"completed"`, `"item.captains_shield"`} {
 		if !strings.Contains(out.text(), want) {
 			t.Fatalf("missing %s: %s", want, out.text())
 		}

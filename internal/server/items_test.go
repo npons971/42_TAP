@@ -37,6 +37,21 @@ func expectRoomItems(t *testing.T, reader *bufio.Reader, ids []string) {
 	}
 }
 
+func expectInventoryItems(t *testing.T, reader *bufio.Reader, want map[string]string) {
+	t.Helper()
+	var items []itemView
+	readWorldReply(t, reader, &items)
+	if len(items) != len(want) {
+		t.Fatalf("inventory=%+v, want %v", items, want)
+	}
+	for _, item := range items {
+		name, exists := want[item.ID]
+		if !exists || item.Name != name || !item.Obtainable || item.Usage == "" {
+			t.Fatalf("invalid inventory descriptor: %+v, want %v", item, want)
+		}
+	}
+}
+
 func TestUniqueItemsAcrossClientsAndDisconnect(t *testing.T) {
 	world, err := LoadWorld("testdata/two_rooms.json")
 	if err != nil {
@@ -64,7 +79,7 @@ func TestUniqueItemsAcrossClientsAndDisconnect(t *testing.T) {
 	expectLine(t, ar, "EVT ROOM ITEM TAKE alice item.apple")
 	expectLine(t, br, "EVT ROOM ITEM TAKE alice item.apple")
 	sendCommand(t, alice, "INVENTORY DETAILS")
-	expectLine(t, ar, `OK [{"id":"item.apple","name":"Pomme fraîche"}]`)
+	expectInventoryItems(t, ar, map[string]string{"item.apple": "Pomme fraîche"})
 	sendCommand(t, bob, "TAKE item.apple")
 	expectLine(t, br, `ERR 404 ITEM_NOT_FOUND TAKE target "item.apple" is not in loc.town_square; use LOOK`)
 	sendCommand(t, alice, "TAKE item.fountain")

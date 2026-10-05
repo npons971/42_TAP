@@ -129,7 +129,7 @@ func TestCombatVictoryAndQuestTCP(t *testing.T) {
 	if dialogue["dialogue"] != s.world.Rewards["quest.bandit_bounty"].Dialogue {
 		t.Fatal(dialogue)
 	}
-	expectLine(t, r, "EVT ROOM ITEM REWARD alice item.ancient_key")
+	expectLine(t, r, "EVT ROOM ITEM REWARD alice item.captains_shield")
 	sendCommand(t, conn, "QUESTINFO quest.bandit_bounty")
 	readWorldReply(t, r, &details)
 	if details.Status != "COMPLETED" {
@@ -138,7 +138,7 @@ func TestCombatVictoryAndQuestTCP(t *testing.T) {
 	sendCommand(t, conn, "INVENTORY DETAILS")
 	var inventory []inventoryItem
 	readWorldReply(t, r, &inventory)
-	if len(inventory) != 2 || inventory[0].ID != "item.ancient_key" {
+	if len(inventory) != 2 || inventory[0].ID != "item.captains_shield" || inventory[0].DefenseBonus != 8 || inventory[0].Type != "armor" {
 		t.Fatal(inventory)
 	}
 	sendCommand(t, conn, "QUESTS DETAILS")

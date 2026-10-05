@@ -236,6 +236,9 @@ func (s *Server) handleCommand(c *client, line string) bool {
 	if verb == "USE" {
 		return s.useItem(c, rest, hasArgs)
 	}
+	if verb == "INFO" {
+		return s.itemInfo(c, rest, hasArgs)
+	}
 	if verb == "TALK" || verb == "TALKJSON" {
 		return s.talkReply(c, rest, hasArgs, verb == "TALKJSON")
 	}

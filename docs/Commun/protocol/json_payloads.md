@@ -15,7 +15,7 @@ empty. Players includes the requester. Dead enemies and held/reserved/consumed
 items are omitted. LOOK DETAILS replaces the item/NPC arrays with descriptors:
 
 ```json
-{"items":[{"id":"item.fountain","name":"Old Fountain","obtainable":false}],"npcs":[{"id":"npc.guard","name":"Village Guard","role":"dialogue"}]}
+{"items":[{"id":"item.fountain","name":"Stone Fountain","obtainable":false,"description":"A permanent stone fountain.","type":"scenery","usage":"Scenery: inspect it with INFO; it cannot be picked up or consumed."}],"npcs":[{"id":"npc.guard","name":"Village Guard","role":"dialogue"}]}
 ```
 
 The room and players fields remain identical in that extension.
@@ -26,8 +26,27 @@ The room and players fields remain identical in that extension.
 ["item.apple","item.rusty_sword"]
 ```
 
-INVENTORY DETAILS returns `[{"id":"item.apple","name":"Fresh Apple"}]`.
+INVENTORY DETAILS returns item descriptors, as does LOOK DETAILS:
+
+```json
+[{"id":"item.rusty_sword","name":"Rusty Sword","obtainable":true,"description":"A worn blade.","type":"weapon","damage_bonus":10,"usage":"Attack bonus applies automatically while carried; only the strongest attack bonus applies."}]
+```
+
+Descriptors include id, name, obtainable, description, type and usage. Positive
+heal_value, damage_bonus and defense_bonus are included; zero stats are omitted.
 Both return `[]` for an empty inventory.
+
+## INFO (extension)
+
+`INFO <item ID or full display name>` returns one item descriptor with the same
+fields. Names are case-insensitive; IDs are exact. The player must be authenticated
+and the object must be in their inventory or on the ground in their current room,
+including scenery. Reserved, consumed, remote and other players' held instances
+are inaccessible. Ambiguous full names require an ID. Inspection is allowed
+during combat and never changes possession, health, combat or quest progress.
+The standard complete-line size limit applies. Usage explains automatic equipment
+bonuses, consumable healing or quest delivery. The GUI chooses USE only for
+consumable objects with positive healing; all other inventory objects offer INFO.
 
 ## STATUS
 
@@ -74,15 +93,40 @@ recorded final blow proves defeat objectives. Completed entries omit progress.
 The extension status unavailable means another player claimed the unique reward
 of a quest this player had already accepted.
 
-QUESTS DETAILS exposes all definitions as `{id,title,status}` with internal
-states NOT_STARTED, IN_PROGRESS, OBJECTIVES_MET, COMPLETED, UNAVAILABLE.
-QUESTINFO <quest_id> is a read-only extension:
+QUESTS DETAILS exposes all definitions, sorted by id, with internal states
+NOT_STARTED, IN_PROGRESS, OBJECTIVES_MET, COMPLETED, UNAVAILABLE. Each entry
+includes id, title, description, status, giver (NPC ID), giver_name,
+giver_location_id, giver_location_name, reward (display name), optional
+reward_hp_heal (positive HP restored on turn-in), and steps. The GUI journal
+requests this extension and falls back to standard QUESTS when it is refused.
+The standard QUESTS and QUEST replies retain their RFC fields.
+
+QUESTINFO <quest_id> returns the same details plus the existing objective
+object. Both extensions are read-only and never accept a quest:
 
 ```json
-{"id":"quest.herbal_cure","title":"The Apothecary's Remedy","giver":"npc.herbalist","description":"Bring rare herbs.","status":"IN_PROGRESS","objective":{"type":"FETCH","target_item":"item.rare_herbs","target_npc":"npc.herbalist","completed":false},"reward":"Vigor Potion"}
+{"id":"quest.herbal_cure","title":"The Apothecary's Remedy","description":"Bring rare herbs.","status":"IN_PROGRESS","giver":"npc.herbalist","giver_name":"Village Herbalist","giver_location_id":"loc.garden","giver_location_name":"Overgrown Garden","reward":"Vigor Potion","reward_hp_heal":100,"steps":[{"type":"FETCH","label":"Collect Rare Herbs","target_id":"item.rare_herbs","location_id":"loc.garden","location_name":"Overgrown Garden","completed":false},{"type":"DELIVER","label":"Deliver Rare Herbs to Village Herbalist","target_id":"npc.herbalist","location_id":"loc.garden","location_name":"Overgrown Garden","completed":false}],"objective":{"type":"FETCH","target_item":"item.rare_herbs","target_npc":"npc.herbalist","completed":false}}
 ```
 
 DEFEAT objectives use target_npc for the enemy and omit target_item.
+The ordered steps are FETCH then DELIVER, or DEFEAT then REPORT. Every step
+contains type, label, target_id, location_id, location_name and completed;
+hint is optional. The first step records current possession or a personal
+final blow; the second records delivery/report and reward attribution. Both
+stay completed after successful turn-in, including after an ingredient is
+consumed. Dropping an ingredient clears first-step completion.
+
+Names and initial placements come from world definitions. A ground ingredient
+uses its current room, including after DROP or disconnection; a carried or
+consumed ingredient uses its original placement as context. If another player
+carries it, hint explicitly states it is not currently on the ground. If an
+ingredient shared with another quest has already been consumed, hint explains
+that it was delivered and is no longer available in this world. If an
+enemy has died without this player's final blow, hint explains that another
+player defeated it and it does not respawn. UNAVAILABLE means the unique reward
+belongs to another player; it does not complete either step for this player.
+The 4,096-byte complete-line limit still applies; oversized extension responses
+return ERR 413 RESPONSE_TOO_LARGE without changing progress.
 
 ## Non-JSON standard replies
 

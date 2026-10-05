@@ -127,7 +127,7 @@ World fields:
   Roles are `dialogue`, `quest_giver` and `enemy`.
 - NPC `dialogue`: nonempty text or a nonempty ordered list of nonblank texts.
 - Item `initial_location: {"kind":"reserve"}`: off-map reward instance.
-  The Ancient Key and Vigor Potion start in reserve and cannot be taken,
+  The Captain's Shield and Vigor Potion start in reserve and cannot be taken,
   dropped or displayed in `LOOK`/`INVENTORY`. Every other item must be placed
   in exactly one room; a reserved item cannot also be placed in a room.
 - Item attributes (type, description, healing, damage and defense), NPC
@@ -138,9 +138,15 @@ The loader rejects invalid IDs, names, roles, dialogues, references,
 duplicate instances and conflicting or missing placements. Room exits may
 be directed: the square’s `west` exit leads to the dark alley, whose `south`
 exit returns to the square. All nine rooms are reachable from the square.
-`LOOK DETAILS` returns descriptors `{id,name,obtainable}` for items and
-`{id,name,role}` for NPCs; `INVENTORY DETAILS` returns `{id,name}`. The 4,096-byte wire
-limit, including final LF, is unchanged.
+`LOOK DETAILS` and `INVENTORY DETAILS` return item descriptors with ID, name,
+description, type, healing, attack/defense bonuses and usage instructions;
+NPC descriptors retain `{id,name,role}`. `INFO <item ID or full name>` returns
+the same item information for an owned item or one on the ground in your room,
+including during combat. Equipment bonuses apply automatically while carried;
+only the strongest bonus for each stat applies. The GUI offers USE for healing
+consumables and INFO for other inventory items. Healing Salve restores 25 HP;
+the bandit bounty grants Captain's Shield with 8 defense. The 4,096-byte wire
+limit, including final LF, is unchanged; standard LOOK/INVENTORY still return IDs.
 
 Each physical object has one location: a room, a player's inventory or the
 reserve, or a terminal consumed state. `TAKE`/`DROP` transfer it atomically; everyone in the room receives
@@ -252,6 +258,8 @@ and LEAVE events update members; disconnect leaves the group. If its leader
 leaves, the first remaining username in sorted order becomes leader and an
 extension EVT GROUP LEADER announces it. Empty groups are deleted. Invitations
 are informational: the RFC does not require invitation-only membership.
+GROUP INVITE/JOIN player names are converted to lowercase before lookup;
+aris, ARIS and ArIs therefore target the same player in the CLI and GUI.
 
 QUEST <local-npc-ID-or-name> accepts a quest and returns quest_id, description,
 reward item ID and status (available on first acceptance, active on repeats).
@@ -269,8 +277,11 @@ STATUS includes hp, max_hp and status (healthy, injured or combat); ATTACK
 includes attacker_hp, target_hp, damage and status, plus documented game details.
 Verbs are case-insensitive. CONNECT ARIS remains invalid under our lowercase
 username policy, while CONNECT élise is accepted.
+This username policy is a project choice, not an RFC requirement. The GUI
+converts uppercase player names to lowercase before validation and sending,
+so entering ARIS in the login form sends CONNECT aris.
 
-The GUI uses LOOK DETAILS, INVENTORY DETAILS and TALKJSON to retain display
+The GUI uses LOOK DETAILS, INVENTORY DETAILS, QUESTS DETAILS, INFO and TALKJSON to retain display
 names, item flags and ordered dialogue lines without shipping a local world
 catalogue. These are explicit extensions; default commands use RFC formats.
 Responses are correlated with outgoing commands so an empty QUESTS does not

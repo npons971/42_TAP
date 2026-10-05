@@ -41,7 +41,7 @@ func (s *Server) group(c *client, args []string) bool {
 		if c.group == "" {
 			return sendError(c, "group_required", "GROUP INVITE requires group membership")
 		}
-		target := s.players[args[2]]
+		target := s.players[strings.ToLower(args[2])]
 		if target == nil {
 			return sendError(c, "player_not_found", "GROUP INVITE player is not connected")
 		}
@@ -63,7 +63,7 @@ func (s *Server) group(c *client, args []string) bool {
 		if c.group != "" {
 			return sendError(c, "already_in_group", "GROUP requires leaving your current group first")
 		}
-		leader := s.players[args[2]]
+		leader := s.players[strings.ToLower(args[2])]
 		if leader == nil || leader.group == "" || s.groupLeaders[leader.group] != leader.username {
 			return sendError(c, "group_not_found", "GROUP JOIN requires a connected group leader; use the name from GROUP INVITE")
 		}

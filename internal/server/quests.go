@@ -11,6 +11,85 @@ type questProgress struct {
 	Defeated map[string]bool
 }
 
+type questStep struct {
+	Type         string `json:"type"`
+	Label        string `json:"label"`
+	TargetID     string `json:"target_id"`
+	LocationID   string `json:"location_id"`
+	LocationName string `json:"location_name"`
+	Completed    bool   `json:"completed"`
+	Hint         string `json:"hint,omitempty"`
+}
+
+type questDetails struct {
+	ID                string      `json:"id"`
+	Title             string      `json:"title"`
+	Description       string      `json:"description"`
+	Status            string      `json:"status"`
+	Giver             string      `json:"giver"`
+	GiverName         string      `json:"giver_name"`
+	GiverLocationID   string      `json:"giver_location_id"`
+	GiverLocationName string      `json:"giver_location_name"`
+	Reward            string      `json:"reward"`
+	RewardHPHeal      int         `json:"reward_hp_heal,omitempty"`
+	Steps             []questStep `json:"steps"`
+}
+
+// Placements and display names come from the validated world catalogue.
+func (s *Server) questTargetRoomLocked(targetID string, item bool) string {
+	for id, room := range s.world.Locations {
+		targets := room.NPCs
+		if item {
+			targets = room.Items
+		}
+		for _, target := range targets {
+			if target == targetID {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
+func (s *Server) questDetailsLocked(c *client, def RewardDefinition) questDetails {
+	status := s.questStatusLocked(c, def)
+	completed := status == "COMPLETED"
+	giverName := s.world.NPCs[def.Giver].Name
+	giverRoom := s.questTargetRoomLocked(def.Giver, false)
+	first := questStep{Completed: completed || s.objectiveLocked(c, def)}
+	last := questStep{TargetID: def.Giver, LocationID: giverRoom, LocationName: s.world.Locations[giverRoom].Name, Completed: completed}
+	if def.Type == "fetch_and_deliver" {
+		name := s.world.Items[def.TargetItem].Name
+		first.Type, first.Label, first.TargetID = "FETCH", "Collect "+name, def.TargetItem
+		first.LocationID = s.questTargetRoomLocked(def.TargetItem, true)
+		location := s.itemLocations[def.TargetItem]
+		if location.owner == nil && !location.reserved && !location.consumed && location.roomID != "" {
+			first.LocationID = location.roomID
+		}
+		if !completed && location.owner != nil && location.owner != c {
+			first.Hint = "Another player is carrying " + name + "; it is not currently on the ground."
+		}
+		if !first.Completed && location.consumed {
+			first.Hint = name + " has already been delivered and is no longer available in this world."
+		}
+		last.Type, last.Label = "DELIVER", "Deliver "+name+" to "+giverName
+	} else {
+		name := s.world.NPCs[def.DefeatNPC].Name
+		first.Type, first.Label, first.TargetID = "DEFEAT", "Defeat "+name+" yourself", def.DefeatNPC
+		first.LocationID = s.questTargetRoomLocked(def.DefeatNPC, false)
+		if state := s.npcStates[def.DefeatNPC]; !first.Completed && state != nil && state.HP <= 0 {
+			first.Hint = name + " was defeated by another player; you must land the final blow yourself, and this enemy does not respawn."
+		}
+		last.Type, last.Label = "REPORT", "Report your victory to "+giverName
+	}
+	first.LocationName = s.world.Locations[first.LocationID].Name
+	return questDetails{
+		ID: def.ID, Title: def.Title, Description: def.Description, Status: status,
+		Giver: def.Giver, GiverName: giverName, GiverLocationID: giverRoom, GiverLocationName: last.LocationName,
+		Reward: s.world.Items[def.RewardItem].Name, RewardHPHeal: def.Heal, Steps: []questStep{first, last},
+	}
+}
+
 func (s *Server) progressLocked(username string) *questProgress {
 	p := s.questProgress[username]
 	if p == nil {
@@ -55,14 +134,9 @@ func (s *Server) quests(c *client, args []string) bool {
 		if len(args) == 1 {
 			return s.playerQuestsLocked(c)
 		}
-		type entry struct {
-			ID     string `json:"id"`
-			Title  string `json:"title"`
-			Status string `json:"status"`
-		}
-		result := []entry{}
-		for id, def := range s.world.Rewards {
-			result = append(result, entry{id, def.Title, s.questStatusLocked(c, def)})
+		result := []questDetails{}
+		for _, def := range s.world.Rewards {
+			result = append(result, s.questDetailsLocked(c, def))
 		}
 		sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 		return queueJSON(c, "QUESTS", result)
@@ -84,16 +158,11 @@ func (s *Server) quests(c *client, args []string) bool {
 	if def.Type == "defeat_and_report" {
 		kind, target = "DEFEAT", def.DefeatNPC
 	}
-	status := s.questStatusLocked(c, def)
+	details := s.questDetailsLocked(c, def)
 	result := struct {
-		ID          string    `json:"id"`
-		Title       string    `json:"title"`
-		Giver       string    `json:"giver"`
-		Description string    `json:"description"`
-		Status      string    `json:"status"`
-		Objective   objective `json:"objective"`
-		Reward      string    `json:"reward"`
-	}{def.ID, def.Title, def.Giver, def.Description, status, objective{kind, def.TargetItem, target, status == "COMPLETED" || s.objectiveLocked(c, def)}, s.world.Items[def.RewardItem].Name}
+		questDetails
+		Objective objective `json:"objective"`
+	}{details, objective{kind, def.TargetItem, target, details.Steps[0].Completed}}
 	return queueJSON(c, "QUESTINFO", result)
 }
 

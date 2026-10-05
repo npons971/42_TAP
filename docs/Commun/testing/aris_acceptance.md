@@ -32,7 +32,7 @@ Le SDK et les caches sont locaux au dépôt. Les tests de pseudo-terminal sont
 | Transactions | File de sortie pleine ou réponse trop longue ne modifie pas les objets/PV/engagements |
 | Monitoring | Token bucket burst/refill, fermeture TCP du client abusif seul, logs JSON/erreurs/paramètres, connexions rapides |
 | CLI | Réception pendant saisie, prompt partiel, UTF-8/backspace, EOF/QUIT, annulation, trames invalides |
-| Intégration | Le vrai CLI joue la prime du bandit sur le vrai serveur et reçoit la clé |
+| Intégration | Le vrai CLI joue la prime du bandit sur le vrai serveur et reçoit le bouclier du capitaine |
 | Terminal Linux | Pseudo-terminal : saisie, déconnexion distante au clavier inactif, SIGTERM, restauration des attributs |
 | Invariants | 2 000 actions d'objets mélangées par répétition, positions uniques et aucun objet consommé recréé |
 

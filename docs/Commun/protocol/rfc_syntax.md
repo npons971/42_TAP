@@ -16,7 +16,8 @@ are listed separately. [JSON schemas](json_payloads.md).
   dialogue responses. This is a documented choice under a recommendation.
 - Greeting: `OK hello proto=1`. Authenticate with `CONNECT` before playing.
 - Commands are case-insensitive. CHAT scopes and GROUP actions are also
-  case-insensitive. Directions and resource IDs remain lowercase.
+  case-insensitive. GROUP INVITE/JOIN player names are converted to lowercase
+  before lookup. Directions and resource IDs remain lowercase.
 - Every command produces one `OK` or `ERR`. `QUIT` sends `OK bye`, cleans up
   player state and closes the connection, including before authentication.
 - Replies preserve request order. Events may occur between replies. Clients
@@ -111,10 +112,13 @@ old room, including the actor; movement/respawn presence events follow.
   Examples: `loc.town_square`, `item.apple_1`, `npc.guard`, `quest.herbal_cure`.
 - One ID per physical item instance; moving, dropping or rewarding it never
   creates a copy or changes its ID. Reward items start in reserve.
-- Usernames: 3–20 Unicode codepoints, first character a lowercase letter, then
+- Usernames (project policy, not an RFC requirement): 3–20 Unicode codepoints, first character a lowercase letter, then
   lowercase letters, decimal digits or underscore:
   `^[\p{Ll}][\p{Ll}\p{Nd}_]{2,19}$`. `aris` and `élise` work; `ARIS` is rejected.
-  Names are compared exactly; no Unicode normalization is performed.
+  CONNECT stores the lowercase name exactly; no Unicode normalization is performed.
+  The GUI converts uppercase input to lowercase before validation and CONNECT.
+  GROUP INVITE/JOIN accepts uppercase or mixed-case player names in both clients;
+  the server converts them to lowercase before lookup.
 - TAKE/DROP/USE/TALK/ATTACK/QUEST accept an exact ID or full display name,
   without quotes. Names are matched case-insensitively in the local room or
   inventory. Exact IDs take precedence; ambiguous names require an ID.
@@ -159,9 +163,11 @@ failed reward delivery or USE at full HP preserves inventory and quest state.
 
 ## Command extensions
 
-- `LOOK DETAILS`: descriptors `{id,name,obtainable}` for items and `{id,name,role}`
-  for NPCs, while standard LOOK keeps ID arrays.
-- `INVENTORY DETAILS`: descriptors `{id,name}`.
+- `LOOK DETAILS`: item descriptors with description, type, healing, bonuses and usage;
+  NPC descriptors remain `{id,name,role}`, while standard LOOK keeps ID arrays.
+- `INVENTORY DETAILS`: item descriptors with description, type, healing, bonuses and usage.
+- `INFO <item ID or full name>`: read-only descriptor for an owned or local ground
+  item, including during combat; excludes inaccessible instances.
 - `WHO DETAILS`: `{"room":["alice"],"server":2}`.
 - `TALKJSON <npc>`: `{"npc":"npc.guard","dialogue":"..."}`; preserves ordered
   dialogue lines as escaped newlines. Standard TALK joins them onto one line.
@@ -172,7 +178,7 @@ failed reward delivery or USE at full HP preserves inventory and quest state.
 - `DEFEND`: halves the current enemy riposte.
 - `FLEE [direction]`: 70% success; omitted direction selects the first sorted exit.
 
-The GUI requests LOOK DETAILS, INVENTORY DETAILS and TALKJSON for its labels and
-NPC modal. It uses standard WHO and QUESTS, and falls back to standard LOOK/INVENTORY/TALK
+The GUI requests LOOK DETAILS, INVENTORY DETAILS, QUESTS DETAILS and TALKJSON for
+its labels, quest journal and NPC modal. It uses standard WHO, and falls back to standard LOOK/INVENTORY/QUESTS/TALK
 when a server refuses metadata extensions. The CLI accepts all standard commands
 and extensions. Detailed combat and quest design choices are justified in README.

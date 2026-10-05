@@ -50,7 +50,7 @@ func TestFullWorldExploration(t *testing.T) {
 	conn, r := dialTestClient(t, addr)
 	sendCommand(t, conn, "CONNECT explorer")
 	expectLine(t, r, "OK connected")
-	for _, id := range []string{"item.ancient_key", "item.vigor_potion"} {
+	for _, id := range []string{"item.captains_shield", "item.vigor_potion"} {
 		sendCommand(t, conn, "TAKE "+id)
 		expectLine(t, r, fmt.Sprintf("ERR 404 ITEM_NOT_FOUND TAKE target %q is not in loc.town_square; use LOOK", id))
 		sendCommand(t, conn, "DROP "+id)
@@ -85,8 +85,8 @@ func TestFullWorldExploration(t *testing.T) {
 			t.Fatalf("wrong placements in %s: %+v", roomID, view)
 		}
 		for _, item := range view.Items {
-			if len(item) != 3 {
-				t.Fatalf("LOOK exposed catalogue-only fields: %+v", item)
+			if item["usage"] == "" || item["description"] == nil || item["type"] == nil || item["initial_location"] != nil {
+				t.Fatalf("invalid LOOK item descriptor: %+v", item)
 			}
 			id, _ := item["id"].(string)
 			if world.Items[id].InitialLocation != nil {
@@ -117,7 +117,7 @@ func TestFullWorldExploration(t *testing.T) {
 	expectLine(t, r, "OK taken=item.apple")
 	expectLine(t, r, "EVT ROOM ITEM TAKE explorer item.apple")
 	sendCommand(t, conn, "INVENTORY DETAILS")
-	expectLine(t, r, `OK [{"id":"item.apple","name":"Fresh Apple"}]`)
+	expectInventoryItems(t, r, map[string]string{"item.apple": "Fresh Apple"})
 	sendCommand(t, conn, "DROP item.apple")
 	expectLine(t, r, "OK dropped=item.apple")
 	expectLine(t, r, "EVT ROOM ITEM DROP explorer item.apple")

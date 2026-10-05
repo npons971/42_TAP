@@ -10,7 +10,7 @@ La copie HTML est identique au contenu de l'archive. Migration réalisée le
 |---|---|
 | Salutation | `OK hello proto=1` |
 | Erreurs | Codes numériques sur trois chiffres, token standard et explication spécifique |
-| Casse des commandes | Verbes insensibles à la casse, ainsi que scopes CHAT et actions GROUP |
+| Casse des commandes | Verbes insensibles à la casse, ainsi que scopes CHAT, actions GROUP et pseudos ciblés par INVITE/JOIN |
 | QUIT | `OK bye` avant EOF, avec nettoyage de session |
 | WHO | `OK players=<nombre>` |
 | LOOK | Tableaux d'IDs pour items et npcs |
@@ -41,14 +41,16 @@ mécaniques sont laissées aux implémenteurs par le RFC et justifiées dans REA
 - LF suit les sections transport et grammaire générale ; la production CONNECT
   mentionnant CRLF est contradictoire avec ces sections.
 - Pseudos minuscules à la demande d'Aris : 3–20 codepoints, lettres minuscules,
-  chiffres décimaux et underscore. Les IDs du monde restent en ASCII minuscule.
+  chiffres décimaux et underscore. Ce choix n'est pas imposé par le RFC ; le GUI
+  convertit les majuscules en minuscules avant validation et envoi de CONNECT.
+  Les IDs du monde restent en ASCII minuscule.
 - Les codes d'erreur standard sont suivis d'un conseil propre à la commande.
   Des codes/tokens supplémentaires couvrent les erreurs non définies par le RFC.
 - Les invitations sont informatives ; le RFC n'impose pas l'adhésion uniquement
   sur invitation. Le chef sortant est remplacé par le premier membre restant
   dans l'ordre des pseudos ; un événement LEADER annonce ce changement.
-- Le GUI utilise LOOK DETAILS, INVENTORY DETAILS et TALKJSON pour les noms et
-  attributs. WHO DETAILS, QUESTINFO et QUESTS DETAILS restent des extensions
+- Le GUI utilise LOOK DETAILS, INVENTORY DETAILS, QUESTS DETAILS et TALKJSON pour
+  les noms, attributs et étapes du journal. WHO DETAILS et QUESTINFO restent des extensions
   explicites ; les commandes standard conservent leurs formats RFC.
 - Une quête déjà acceptée dont la récompense unique est attribuée à un autre
   joueur reste affichée avec statut d'extension unavailable. Les quêtes non

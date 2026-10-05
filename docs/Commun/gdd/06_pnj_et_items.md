@@ -50,12 +50,12 @@ Le sujet requiert au minimum **3 rôles distincts** de PNJ. Notre univers en pro
 | `item.apple` | Fresh Apple | `loc.market` | Oui | consumable ; Soin : 10 |
 | `item.ale` | Frothy Ale | `loc.tavern` | Oui | consumable ; Soin : 15 |
 | `item.rusty_sword` | Rusty Sword | `loc.dark_alley` | Oui | weapon ; Bonus attaque : 10 |
-| `item.torch` | Wooden Torch | `loc.cellar` | Oui | tool |
+| `item.healing_salve` | Healing Salve | `loc.cellar` | Oui | consumable ; Soin : 25 |
 | `item.wooden_shield` | Battered Shield | `loc.ruins_gate` | Oui | armor ; Bonus défense : 5 |
 | `item.rare_herbs` | Rare Herbs | `loc.garden` | Oui | quest |
 | `item.mystery_chest` | Heavy Iron Chest | `loc.ruins_den` | Non | scenery |
 | `item.fountain` | Stone Fountain | `loc.town_square` | Non | scenery |
-| `item.ancient_key` | Ancient Key | Réserve de quête | Oui | quest_reward |
+| `item.captains_shield` | Captain's Shield | Réserve de quête | Oui | armor ; Bonus défense : 8 |
 | `item.vigor_potion` | Vigor Potion | Réserve de quête | Oui | consumable ; Soin : 100 |
 
 Les soins des consommables sont actifs via `USE`. Les herbes sont consommées par la livraison via `TALK`. Le combat applique le meilleur bonus d’attaque et de défense porté, sans cumul. Les objets réservés ne sont pas affichés au sol et ne peuvent pas être pris tant qu’ils ne sont pas attribués. Un objet doit avoir un placement unique : une salle ou `initial_location: {"kind":"reserve"}`, jamais les deux.
@@ -84,3 +84,16 @@ quête reçoit item_not_usable ; un objet absent reçoit not_in_inventory.
 Une livraison à l'herboriste consomme les herbes, attribue la potion de réserve
 et soigne à 100, une seule fois par monde. Les objets non consommés sont
 partageables ; aucun objet unique n'est recréé à la déconnexion.
+
+### INFO et bonus automatiques
+
+`INFO <ID ou nom complet>` décrit un objet possédé ou au sol dans la salle,
+y compris pendant un combat, sans modifier l'état du jeu. La fiche indique
+description, type, soin, bonus et usage. Les objets réservés, consommés, dans
+une autre salle ou portés par autrui ne peuvent pas être inspectés.
+Le GUI propose USE pour les consommables et INFO pour les autres objets de
+l'inventaire. Les armes et armures sont actives dès qu'elles sont ramassées :
+le meilleur bonus d'attaque et le meilleur bonus de défense s'appliquent
+indépendamment, sans cumul. Les herbes ont un usage de quête via TALK.
+La torche sans effet est remplacée par Healing Salve (25 PV), et la clé sans
+serrure par Captain's Shield (+8 défense), récompense réservée du capitaine.

@@ -64,7 +64,7 @@ func TestDeliveryRewardsTCPAndReconnect(t *testing.T) {
 	sendCommand(t, alice, "STATUS")
 	expectLine(t, ar, `OK {"status":"healthy","player":"alice","hp":100,"max_hp":100,"state":"HORS_COMBAT","combat":null}`)
 	sendCommand(t, alice, "INVENTORY DETAILS")
-	expectLine(t, ar, `OK [{"id":"item.vigor_potion","name":"Vigor Potion"}]`)
+	expectInventoryItems(t, ar, map[string]string{"item.vigor_potion": "Vigor Potion"})
 	sendCommand(t, alice, "TALKJSON npc.herbalist")
 	readWorldReply(t, ar, &reply)
 	if !strings.Contains(reply.Dialogue, "already complete") {
@@ -258,7 +258,7 @@ func TestWorldRejectsInvalidRewardDefinitions(t *testing.T) {
 		{"negative_heal", "reward_hp_heal", -1, "nonnegative healing"},
 		{"blank_completion", "completion_dialogue", " ", "completion dialogue"},
 		{"unsupported_type", "type", "other", "unsupported type"},
-		{"shared_reward", "reward_item", "item.ancient_key", "share a unique reward"},
+		{"shared_reward", "reward_item", "item.captains_shield", "share a unique reward"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var file map[string]any
