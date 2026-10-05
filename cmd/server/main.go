@@ -97,8 +97,8 @@ func printClientCommands(listener net.Listener) {
 	}
 	for _, host := range hosts {
 		port := fmt.Sprint(address.Port)
-		fmt.Printf("\n  make run-cli CLI_ADDR='%s'\n", net.JoinHostPort(host, port))
-		fmt.Printf("  make run-gui GUI_HOST='%s' GUI_PORT=%s GUI_SERVER=off\n", host, port)
+		fmt.Printf("\n  make run-client CLI_ADDR='%s'\n", net.JoinHostPort(host, port))
+		fmt.Printf("  make run-client-gui GUI_HOST='%s' GUI_PORT=%s GUI_SERVER=off\n", host, port)
 	}
 	fmt.Println()
 }

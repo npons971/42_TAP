@@ -23,7 +23,7 @@ for candidate in gnome-terminal konsole xfce4-terminal mate-terminal kitty alacr
     fi
 done
 if [[ -z "$terminal" ]]; then
-    echo 'Aucun terminal compatible trouvé. Lancez make run-server, make run-cli et make gui dans trois terminaux.' >&2
+    echo 'Aucun terminal compatible trouvé. Lancez make run-server, make run-client et make run-client-gui dans trois terminaux.' >&2
     exit 1
 fi
 
@@ -91,7 +91,7 @@ open_terminal() {
     esac
 }
 
-open_terminal 'TAP — CLI' run-cli "CLI_ADDR=$cli_addr" &
-open_terminal 'TAP — GUI' gui "GUI_HOST=$gui_host" "GUI_PORT=$gui_port" GUI_SERVER=off "WORLD_FILE=$world_file" &
+open_terminal 'TAP — CLI' run-client "CLI_ADDR=$cli_addr" &
+open_terminal 'TAP — GUI' run-client-gui "GUI_HOST=$gui_host" "GUI_PORT=$gui_port" GUI_SERVER=off "WORLD_FILE=$world_file" &
 echo 'Clients ouverts dans deux terminaux. Ctrl+C ici pour arrêter le serveur.'
 wait "$server_pid"

@@ -16,7 +16,7 @@ dans `.build/gui-server.log`. Fermer le serveur remet le monde à son état init
 
 | Commande | Usage |
 |---|---|
-| `make gui` ou `make run-gui` | Jouer en local |
+| `make gui` ou `make run-client-gui` | Jouer en local |
 | `make gui GUI_PORT=4243` | Utiliser un autre port local |
 | `make gui GUI_HOST=192.168.1.10 GUI_PORT=4242 GUI_SERVER=off` | Rejoindre un serveur distant |
 | `make gui GUI_SERVER=off` | Ouvrir uniquement le client |

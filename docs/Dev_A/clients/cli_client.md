@@ -9,8 +9,8 @@ between the terminal, the GUI backend and peer clients, without guessing IDs
 from short names. Full display names remain supported by the server.
 
 ```sh
-make run-cli
-make run-cli CLI_ADDR=127.0.0.1:4243
+make run-client
+make run-client CLI_ADDR=127.0.0.1:4243
 make build-cli
 .build/tap-cli -addr 127.0.0.1:4242
 ```

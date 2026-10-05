@@ -7,7 +7,7 @@ sont implémentées.
 | Problème trouvé | Correction |
 |---|---|
 | API Svelte 4 utilisée avec Svelte 5 : risque d'écran vide au démarrage | `mount()` dans le point d'entrée |
-| Aucun lancement du GUI depuis la racine | `make gui`, `make run-gui`, `make dev-gui`, aide par défaut |
+| Aucun lancement du GUI depuis la racine | `make gui`, `make run-client-gui`, `make dev-gui`, aide par défaut |
 | Wails/npm dépendaient du répertoire courant et des outils globaux | Wrappers locaux, commandes frontend relatives, SDK WebKit 4.1 explicite |
 | Compilateur C absent ; pkg-config du SDK inaccessible | Compilateur Zig local vérifié par SHA-256 et PATH du SDK |
 | Installation GTK/WebKit dépendant de gestionnaires de paquets système | Téléchargement direct depuis les index officiels Ubuntu/Debian, contrôles SHA-256 et extraction locale |

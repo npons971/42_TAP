@@ -39,7 +39,7 @@ Le SDK et les caches sont locaux au dépôt. Les tests de pseudo-terminal sont
 ## Parcours manuel complet
 
 Terminal 1 : `make run-server`.
-Terminal 2 : `make run-cli`, puis :
+Terminal 2 : `make run-client`, puis :
 
 ```text
 CONNECT aris

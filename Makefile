@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install install-webkit clean build build-server run-server run-all build-cli run-cli test lint gui run-gui dev-gui build-gui check-gui build-frontend frontend-deps fetch-webkit test-server test-client test-integration test-gui test-cli-pty test-all
+.PHONY: help install install-webkit clean build build-server run-server run-all build-cli run-client test lint gui run-client-gui dev-gui build-gui check-gui build-frontend frontend-deps fetch-webkit test-server test-client test-integration test-gui test-cli-pty test-all
 
 PROJECT_ROOT := $(CURDIR)
 GO := $(PROJECT_ROOT)/go
@@ -31,16 +31,16 @@ help:
 	@printf '%s\n' \
 	  '  make run-all      Lance le serveur ici et les deux clients dans deux terminaux' \
 	  '  make build        Compile le serveur, le CLI et le GUI' \
-	  '  make gui          Compile et ouvre le GUI ; démarre un serveur local si nécessaire' \
+	  '  make run-client-gui Compile et ouvre le GUI ; démarre un serveur local si nécessaire' \
 	  '  make dev-gui      Même lancement avec rechargement du frontend' \
 	  '  make build-gui    Compile le GUI sans ouvrir de fenêtre' \
 	  '  make check-gui    Vérifie les outils locaux et GTK/WebKit' \
 	  '  make run-server   Lance uniquement le serveur TCP' \
-	  '  make run-cli      Lance le client terminal' \
+	  '  make run-client   Lance le client terminal' \
 	  '  make test         Tests serveur, CLI, GUI et compilation du frontend' \
 	  '  make lint         Vérifie le formatage Go et analyse Go, JavaScript et Svelte' \
 	  '  make install      Installe les outils dans le dépôt' \
-	  '' 'Serveur distant : make gui GUI_HOST=adresse GUI_PORT=4242 GUI_SERVER=off' \
+	  '' 'Serveur distant : make run-client-gui GUI_HOST=adresse GUI_PORT=4242 GUI_SERVER=off' \
 	  'Sortie détaillée : make install V=1 (logs : .build/logs/)' ''
 
 build: build-server build-cli build-gui
@@ -51,7 +51,7 @@ run-all:
 gui: build-server build-gui
 	$(NODE) scripts/run-gui.mjs --host "$(GUI_HOST)" --port "$(GUI_PORT)" --server "$(GUI_SERVER)" --world "$(WORLD_FILE)"
 
-run-gui: gui
+run-client-gui: gui
 
 dev-gui: build-server install frontend-deps
 	$(NODE) scripts/run-gui.mjs --dev --host "$(GUI_HOST)" --port "$(GUI_PORT)" --server "$(GUI_SERVER)" --world "$(WORLD_FILE)"
@@ -74,7 +74,7 @@ build-cli: go
 	mkdir -p .build
 	$(OUTPUT) run 'Compilation du client terminal' ./go build -o .build/tap-cli ./cmd/client-cli
 
-run-cli: go
+run-client: go
 	@$(OUTPUT) say 'Connexion du client à $(CLI_ADDR)'
 	./go run ./cmd/client-cli -addr "$(CLI_ADDR)"
 
