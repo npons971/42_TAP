@@ -113,7 +113,7 @@ func TestAppLiveServerIntegration(t *testing.T) {
 
 	// 1. Connect
 	testUser := fmt.Sprintf("test_gui_%d", time.Now().Unix()%10000)
-	if err := app.Connect("127.0.0.1", addr.Port, testUser); err != nil {
+	if err := app.Connect("127.0.0.1", addr.Port, " "+strings.ToUpper(testUser)+" "); err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
 	defer func() {
@@ -362,8 +362,11 @@ func TestGUIProtocolCommandsAndDisconnect(t *testing.T) {
 	}()
 	app := NewApp()
 	addr := listener.Addr().(*net.TCPAddr)
-	if err := app.Connect("127.0.0.1", addr.Port, "élise"); err != nil {
+	if err := app.Connect("127.0.0.1", addr.Port, " ÉLISE "); err != nil {
 		t.Fatal(err)
+	}
+	if app.GetUsername() != "élise" {
+		t.Fatalf("expected normalized username élise, got %q", app.GetUsername())
 	}
 	steps := []struct {
 		action func() error
@@ -371,10 +374,12 @@ func TestGUIProtocolCommandsAndDisconnect(t *testing.T) {
 	}{
 		{nil, "CONNECT élise"}, {app.Look, "LOOK DETAILS"}, {app.Inventory, "INVENTORY DETAILS"},
 		{func() error { return app.Talk("Village Guard") }, "TALKJSON Village Guard"},
-		{app.Who, "WHO"}, {app.Quests, "QUESTS"}, {func() error { return app.Quest("npc.herbalist") }, "QUEST npc.herbalist"},
+		{app.Who, "WHO"}, {app.Quests, "QUESTS DETAILS"}, {func() error { return app.Quest("npc.herbalist") }, "QUEST npc.herbalist"},
 		{func() error { return app.Group("CREATE", "") }, "GROUP CREATE"},
-		{func() error { return app.Group("INVITE", "bob") }, "GROUP INVITE bob"},
-		{func() error { return app.Group("JOIN", "bob") }, "GROUP JOIN bob"},
+		{func() error { return app.Group(" invite ", " BoB ") }, "GROUP INVITE bob"},
+		{func() error { return app.Group("JOIN", " BOB ") }, "GROUP JOIN bob"},
+		{func() error { return app.Group("INVITE", " ÉLISE ") }, "GROUP INVITE élise"},
+		{func() error { return app.Group(" join ", " ÉlIsE ") }, "GROUP JOIN élise"},
 	}
 	for _, step := range steps {
 		if step.action != nil {
@@ -497,8 +502,6 @@ func TestGUIConnectionValidation(t *testing.T) {
 		port                 int
 	}{
 		{"empty username", "127.0.0.1", "", port},
-		{"uppercase unicode username", "127.0.0.1", "Élise", port},
-		{"uppercase username", "127.0.0.1", "Alice", port},
 		{"short username", "127.0.0.1", "ab", port},
 		{"digit prefix", "127.0.0.1", "1alice", port},
 		{"multiple words", "127.0.0.1", "alice bob", port},

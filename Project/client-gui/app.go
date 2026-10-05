@@ -66,6 +66,7 @@ func (a *App) ConnectionDefaults() map[string]interface{} {
 
 // Connect completes the protocol handshake before publishing an active session.
 func (a *App) Connect(host string, port int, username string) error {
+	username = strings.ToLower(strings.TrimSpace(username))
 	a.sessionMu.Lock()
 	conn, reader, err := a.connect(host, port, username)
 	a.sessionMu.Unlock()
@@ -74,7 +75,7 @@ func (a *App) Connect(host string, port int, username string) error {
 	}
 	a.emitFor(conn, "raw_message", "OK connected")
 	a.emitFor(conn, "server_ok", "connected")
-	a.emitReply(conn, "OK", "CONNECT", "connected", "CONNECT "+strings.TrimSpace(username))
+	a.emitReply(conn, "OK", "CONNECT", "connected", "CONNECT "+username)
 	go a.listenServer(conn, reader)
 	return nil
 }
@@ -340,7 +341,7 @@ func (a *App) Quest(npc string) error {
 }
 
 func (a *App) Quests() error {
-	return a.SendCommand("QUESTS")
+	return a.SendCommand("QUESTS DETAILS")
 }
 
 func (a *App) Who() error {
@@ -348,10 +349,15 @@ func (a *App) Who() error {
 }
 
 func (a *App) Group(action string, args string) error {
-	if strings.TrimSpace(args) == "" {
-		return a.SendCommand(fmt.Sprintf("GROUP %s", strings.TrimSpace(action)))
+	action = strings.ToUpper(strings.TrimSpace(action))
+	args = strings.TrimSpace(args)
+	if action == "INVITE" || action == "JOIN" {
+		args = strings.ToLower(args)
 	}
-	return a.SendCommand(fmt.Sprintf("GROUP %s %s", strings.TrimSpace(action), strings.TrimSpace(args)))
+	if args == "" {
+		return a.SendCommand(fmt.Sprintf("GROUP %s", action))
+	}
+	return a.SendCommand(fmt.Sprintf("GROUP %s %s", action, args))
 }
 
 // IsConnected returns current connection status.

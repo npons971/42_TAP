@@ -4,6 +4,7 @@
   import Icon from './Icon.svelte';
   import Nearby from './Nearby.svelte';
   import PixelSprite from './PixelSprite.svelte';
+  import ItemInfo from './ItemInfo.svelte';
 
   // Connection State
   let connected = false;
@@ -42,6 +43,7 @@
 
   // NPC Dialogue Modal
   let activeDialogue = null; // { npc: "...", text: "..." }
+  let activeItemInfo = null;
 
   // Chat & Logs Tabs (Mandatory Subject requirement V.4)
   let activeTab = "global"; // "global" | "room" | "group" | "logs"
@@ -54,7 +56,9 @@
     logs: []
   };
   const MESSAGE_LIMIT = 500;
+  const CHAT_CHANNELS = ["global", "room", "group"];
   let actionError = "";
+  let groupError = "";
   let groupStatus = "";
   let refreshTimer = null;
   const pendingRefresh = new Set();
@@ -68,7 +72,7 @@
       refreshTimer = null;
       const methods = [...pendingRefresh];
       pendingRefresh.clear();
-      methods.forEach(method => invoke(method));
+      methods.forEach(method => invokeBackend(method, [], false));
     }, 50);
   }
 
@@ -79,14 +83,15 @@
   }
 
   // Helper for adding messages
-  function addMessage(channel, sender, text, type = "normal") {
+  function addMessage(channel, sender, text, type = "normal", mirrorToLogs = true) {
+    if (channel !== "logs" && !CHAT_CHANNELS.includes(channel)) return;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     const msg = { time, sender, text, type };
     if (messages[channel]) {
       messages[channel] = [...messages[channel], msg].slice(-MESSAGE_LIMIT);
     }
     // Also push system events or chat into logs
-    if (channel !== 'logs') {
+    if (mirrorToLogs && channel !== 'logs') {
       messages.logs = [...messages.logs, { time, sender: `[${channel.toUpperCase()}] ${sender}`, text, type }].slice(-MESSAGE_LIMIT);
     }
     scrollToBottom();
@@ -119,9 +124,11 @@
     roomPlayersCount = 0;
     serverPlayersCount = 0;
     activeDialogue = null;
+    activeItemInfo = null;
     showGroupModal = false;
     groupTarget = "";
     groupStatus = "";
+    groupError = "";
     clearTimeout(refreshTimer);
     refreshTimer = null;
     pendingRefresh.clear();
@@ -158,18 +165,18 @@
 
   // Server Payload Parsing
   function handleServerOK(payload, command = "") {
+    addLog(`S: OK${payload ? " " + payload : ""}`, "ok");
     if (command === "GROUP") {
-      groupStatus = "Party updated. Check Group Chat for notifications.";
-      addMessage("group", "GROUP", groupStatus, "system");
+      groupError = "";
+      groupStatus = "Group updated. Check GROUP for notifications.";
+      addMessage("group", "GROUP", groupStatus, "system", false);
     }
     if (!payload) return;
-    addLog(`S: OK ${payload}`, "ok");
 
-    if (payload === "connected") {
+    if (command === "CONNECT" && payload === "connected") {
       connected = true;
       connecting = false;
       connectionError = "";
-      addMessage("global", "SYSTEM", `Connected successfully as ${username}!`, "system");
       scheduleRefresh("Look", "Inventory", "Status", "Who", "Quests");
       return;
     }
@@ -186,7 +193,7 @@
         const data = JSON.parse(payload);
 
         // LOOK payload
-        if (data.room && !Array.isArray(data.room) && data.room.id) {
+        if (command === "LOOK" && data.room && !Array.isArray(data.room) && data.room.id) {
           if (currentRoom.id !== data.room.id) {
             selectedEntity = '';
           }
@@ -205,7 +212,11 @@
         }
 
         // STATUS payload
-        if (data.hp !== undefined && data.max_hp !== undefined) {
+        if (command === "INFO" && data.id && data.name) {
+          showItemInfo(data);
+          return;
+        }
+        if (command === "STATUS" && data.hp !== undefined && data.max_hp !== undefined) {
           playerHP = data.hp;
           playerMaxHP = data.max_hp || 100;
           combatState = data.state || (data.status === "combat" ? "EN_COMBAT" : "HORS_COMBAT");
@@ -214,17 +225,16 @@
         }
 
         // WHO payload
-        if (data.room !== undefined && data.server !== undefined) {
+        if (command === "WHO" && data.room !== undefined && data.server !== undefined) {
           roomPlayersCount = Array.isArray(data.room) ? data.room.length : data.room;
           serverPlayersCount = data.server;
           return;
         }
 
         // INVENTORY payload (Array)
-        if (Array.isArray(data)) {
-          // Could be INVENTORY or QUESTS
-          if (command === "QUESTS" || (data[0] && (data[0].quest_id || data[0].title))) {
-            quests = data.map(q => ({...q, id: q.quest_id || q.id, title: q.title || q.quest_id || q.id}));
+        if (Array.isArray(data) && ["INVENTORY", "QUESTS"].includes(command)) {
+          if (command === "QUESTS") {
+            quests = data.map(normalizeQuest);
           } else {
             inventory = normalizeItems(data);
           }
@@ -232,11 +242,15 @@
         }
 
         // TALK payload
-        if (data.npc && data.dialogue) {
+        if (command === "QUEST" && data.quest_id && data.description) {
+          const quest = quests.find(q => q.id === data.quest_id);
+          showDialogue(quest?.title || displayQuestName(data.quest_id), data.description);
+          return;
+        }
+        if (["TALK", "TALKJSON"].includes(command) && data.npc && data.dialogue) {
           const text = Array.isArray(data.dialogue) ? data.dialogue.join("\n") : String(data.dialogue);
-          mapExpanded = false;
-          activeDialogue = { npc: data.npc, text };
-          addMessage("room", data.npc, text, "dialogue");
+          showDialogue(data.npc, text);
+          addMessage("room", data.npc, text, "dialogue", false);
           return;
         }
       } catch (e) {
@@ -246,18 +260,18 @@
 
     // Key-value OK responses: OK room=loc.market, OK taken=item.apple, etc.
     if (command === "TALK") {
-      mapExpanded = false;
-      activeDialogue = {npc: "NPC", text: payload};
-      addMessage("room", "NPC", payload, "dialogue");
-    } else if (payload.startsWith("players=")) {
-      serverPlayersCount = Number(payload.slice(8));
-    } else if (payload.startsWith("room=")) {
+      showDialogue('NPC', payload);
+      addMessage("room", "NPC", payload, "dialogue", false);
+    } else if (command === "WHO" && /^players=\d+$/.test(payload)) {
+      const count = Number(payload.slice(8));
+      if (Number.isSafeInteger(count)) serverPlayersCount = count;
+    } else if (command === "MOVE" && payload.startsWith("room=")) {
       // Room changed, refresh look
       scheduleRefresh("Look");
-    } else if (payload.startsWith("taken=") || payload.startsWith("dropped=")) {
+    } else if ((command === "TAKE" && payload.startsWith("taken=")) || (command === "DROP" && payload.startsWith("dropped="))) {
       // Item action confirmed, refresh room & inventory
       scheduleRefresh("Look", "Inventory", "Quests");
-    } else if (payload.startsWith("used=")) {
+    } else if (command === "USE" && payload.startsWith("used=")) {
       scheduleRefresh("Inventory", "Status", "Quests");
     }
   }
@@ -268,8 +282,27 @@
         const cleanName = item.replace(/^item\./, '').replace(/_/g, ' ');
         return { id: item, name: cleanName, obtainable: true };
       }
-      return { id: item.id, name: item.name || item.id, description: item.description || '', obtainable: item.obtainable !== false };
+      return { id: item.id, name: item.name || item.id, description: item.description || '', obtainable: item.obtainable !== false,
+        type: item.type || '', heal_value: item.heal_value || 0, damage_bonus: item.damage_bonus || 0, defense_bonus: item.defense_bonus || 0, usage: item.usage || '' };
     });
+  }
+
+  function canUseItem(item) {
+    return item.type === 'consumable' && item.heal_value > 0;
+  }
+
+  function showItemInfo(item) {
+    mapExpanded = false;
+    activeDialogue = null;
+    showGroupModal = false;
+    activeItemInfo = normalizeItems([item])[0];
+  }
+
+  function showDialogue(npc, text) {
+    mapExpanded = false;
+    activeItemInfo = null;
+    showGroupModal = false;
+    activeDialogue = {npc, text};
   }
 
   function normalizeNPCs(rawNPCs) {
@@ -282,19 +315,71 @@
     });
   }
 
+  function displayQuestName(id = '') {
+    return id.replace(/^(quest|npc)\./, '').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+  }
+
+  function normalizeQuest(q) {
+    const id = q.quest_id || q.id;
+    const status = String(q.status || 'active').toUpperCase();
+    const state = {
+      NOT_STARTED: 'available', AVAILABLE: 'available', IN_PROGRESS: 'active', ACTIVE: q.progress === '1/1' ? 'ready' : 'active', READY: 'ready',
+      OBJECTIVES_MET: 'ready', COMPLETED: 'completed', UNAVAILABLE: 'unavailable'
+    }[status] || (q.progress === '1/1' ? 'ready' : 'active');
+    return { ...q, id, title: q.title || displayQuestName(id), state, steps: Array.isArray(q.steps) ? q.steps : [] };
+  }
+
+  function questStatusLabel(q) {
+    return {available: 'Available', active: 'In progress', ready: 'Return to giver', completed: 'Completed', unavailable: 'Unavailable'}[q.state];
+  }
+
+  function questNextAction(q) {
+    if (q.state === 'completed') return 'Reward received. Quest complete.';
+    if (q.state === 'unavailable') return 'Another player has claimed this world’s unique reward.';
+    const giver = q.giver_name || displayQuestName(q.giver || 'quest giver');
+    const place = q.giver_location_name ? ` at ${q.giver_location_name}` : '';
+    const step = q.steps.find(step => !step.completed);
+    if (step?.hint) return step.hint;
+    if (q.state === 'available') return `Speak to ${giver}${place} to accept this quest.`;
+    if (step) return `${step.label}${step.location_name ? ` at ${step.location_name}` : ''}.`;
+    if (q.state === 'ready' && q.giver) return `Speak to ${giver}${place} to claim your reward.`;
+    return q.description || 'Speak to the quest giver for instructions.';
+  }
+
+  function canTalkToQuestGiver(q) {
+    return Boolean(q.giver && ['available', 'ready'].includes(q.state) && currentRoom.npcs.some(npc => npc.id === q.giver));
+  }
+
+  function showActionError(payload, command, request = "", sender = "SERVER") {
+    actionError = payload;
+    if (command === "GROUP") { groupError = payload; groupStatus = ""; }
+    // Use the failed request's scope even if the player has switched tabs.
+    const channel = command === "CHAT" ? request.trim().split(/\s+/)[1]?.toLowerCase() : command === "GROUP" ? "group" : null;
+    if (CHAT_CHANNELS.includes(channel)) {
+      addMessage(channel, sender, `Error: ${payload}`, "error", false);
+    }
+  }
+
   function handleServerERR(payload, command = "", request = "") {
+    addLog(`S: ERR ${payload}`, "error");
     const backend = getBackend();
     if (/^400 (INVALID_ARGUMENTS|UNKNOWN_COMMAND)\b/.test(payload)) {
-      const fallback = request === "LOOK DETAILS" ? "LOOK" : request === "INVENTORY DETAILS" ? "INVENTORY" : request.startsWith("TALKJSON ") ? request.replace(/^TALKJSON /, "TALK ") : null;
-      if (fallback && backend) { invoke("SendCommand", fallback); return; }
+      if (command === 'INFO' && request.startsWith('INFO ')) {
+        const id = request.slice(5);
+        const item = [...inventory, ...currentRoom.items].find(item => item.id === id);
+        if (item) {
+          showItemInfo({...item, usage: item.usage || 'This server does not provide detailed item information.'});
+          return;
+        }
+      }
+      const fallback = request === "LOOK DETAILS" ? "LOOK" : request === "INVENTORY DETAILS" ? "INVENTORY" : request === "QUESTS DETAILS" ? "QUESTS" : request.startsWith("TALKJSON ") ? request.replace(/^TALKJSON /, "TALK ") : null;
+      if (fallback && backend) { invokeBackend("SendCommand", [fallback], false); return; }
     }
     if (command === "CONNECT") {
       connecting = false; connected = false; connectionError = payload;
       if (backend) backend.Disconnect().catch(e => addLog(String(e), "error"));
     }
-    actionError = payload;
-    addLog(`S: ERR ${payload}`, "error");
-    addMessage("room", "SERVER", `Error: ${payload}`, "error");
+    showActionError(payload, command, request);
     if (connecting) {
       connecting = false;
       connectionError = payload;
@@ -309,50 +394,58 @@
     const evtType = parts[1] || "";
     const rest = parts.slice(2).join(" ");
 
-    if (scope === "stats" && evtType.startsWith("players=")) {
-      serverPlayersCount = Number(evtType.slice(8));
-    } else if (scope === "group" && ["INVITE", "JOIN", "LEAVE", "LEADER"].includes(evtType)) {
-      addMessage("group", "GROUP", `${evtType}: ${rest}`, "system");
-    } else if (evtType === "CHAT") {
-      const sender = parts[2] || "someone";
+    if (scope === "stats" && /^players=\d+$/.test(evtType) && parts.length === 2) {
+      const count = Number(evtType.slice(8));
+      if (Number.isSafeInteger(count)) serverPlayersCount = count;
+    } else if (scope === "group" && ["INVITE", "JOIN", "LEAVE", "LEADER"].includes(evtType) && parts.length === 3 && rest) {
+      addMessage("group", "GROUP", `${evtType}: ${rest}`, "system", false);
+    } else if (CHAT_CHANNELS.includes(scope) && evtType === "CHAT" && parts[2] && parts.slice(3).join(" ").trim()) {
+      const sender = parts[2];
       const text = parts.slice(3).join(" ");
-      addMessage(scope, sender, text, "chat");
-    } else if (evtType === "PRESENCE") {
+      addMessage(scope, sender, text, "chat", false);
+    } else if (scope === "room" && evtType === "PRESENCE" && ["ENTER", "LEAVE"].includes(parts[2]) && parts.length === 4 && parts[3]) {
       const action = parts[2] || ""; // ENTER or LEAVE
       const targetUser = parts[3] || "";
       const text = `${targetUser} ${action === "ENTER" ? "entered" : "left"} the room.`;
-      addMessage("room", "ROOM", text, "presence");
+      addMessage("room", "ROOM", text, "presence", false);
       scheduleRefresh("Look", "Who");
-    } else if (evtType === "COMBAT") {
-      addMessage("room", "COMBAT", rest, "combat");
+    } else if (scope === "room" && evtType === "COMBAT" && rest) {
+      addMessage("room", "COMBAT", rest, "combat", false);
       scheduleRefresh("Status", "Look", "Quests");
-    } else if (evtType === "ITEM") {
+    } else if (scope === "room" && evtType === "ITEM" && ["TAKE", "DROP", "USE", "DELIVER", "REWARD"].includes(parts[2]) && parts.length === 5 && parts[3] && parts[4]) {
       const action = parts[2] || ""; // TAKE or DROP
       const actor = parts[3] || "";
       const itemId = parts[4] || "";
       const cleanItem = itemId.replace(/^item\./, '').replace(/_/g, ' ');
       const actionVerb = { TAKE: "picked up", DROP: "dropped", USE: "used", DELIVER: "delivered", REWARD: "received" }[action] || action.toLowerCase();
       const text = `${actor} ${actionVerb} ${cleanItem} (${itemId}).`;
-      addMessage("room", "ROOM", text, "item");
-      scheduleRefresh("Look");
-      if (parts[3] === username.trim() && ["USE", "DELIVER", "REWARD"].includes(parts[2])) {
+      addMessage("room", "ROOM", text, "item", false);
+      scheduleRefresh("Look", "Quests");
+      if (parts[3] === username.trim()) {
         scheduleRefresh("Inventory", "Status", "Quests");
       }
     }
   }
 
   // Keep network failures visible and prevent unhandled action promises.
-  async function invoke(method, ...args) {
+  function invoke(method, ...args) {
+    return invokeBackend(method, args, true);
+  }
+
+  async function invokeBackend(method, args, clearError) {
     if (!connected) return false;
     const backend = getBackend();
+    const request = method === "SendCommand" ? args[0] : `${method} ${args[0] || ""}`;
+    const command = request.trim().split(/\s+/)[0].toUpperCase();
     try {
       if (!backend?.[method]) throw new Error("Wails backend unavailable. Launch with make gui.");
-      actionError = "";
+      if (clearError) actionError = "";
+      if (clearError && command === "GROUP") groupError = "";
       await backend[method](...args);
       return true;
     } catch (err) {
-      actionError = String(err);
-      addLog(actionError, "error");
+      showActionError(String(err), command, request, "CLIENT");
+      addLog(String(err), "error");
       return false;
     }
   }
@@ -360,7 +453,7 @@
   async function handleConnect() {
     if (connecting) return;
     connectionError = "";
-    username = (username || "").trim();
+    username = (username || "").trim().toLowerCase();
     host = (host || "").trim();
     const userLength = [...username].length;
     if (userLength < 3 || userLength > 20 || !/^[\p{Ll}][\p{Ll}\p{Nd}_]*$/u.test(username)) {
@@ -402,19 +495,22 @@
   const callQuests = () => invoke("Quests");
   const callWho = () => invoke("Who");
   const callUse = id => invoke("SendCommand", "USE " + id);
+  const callInfo = id => invoke("SendCommand", "INFO " + id);
   const callDefend = () => invoke("SendCommand", "DEFEND");
   const callFlee = () => invoke("SendCommand", "FLEE");
   function callGroup(action, target = "") {
-    target = target.trim();
+    target = target.trim().toLowerCase();
     if (["INVITE", "JOIN"].includes(action) && !target) {
-      actionError = "Enter the player's username (the leader for JOIN).";
+      const error = "Enter the player's username (the leader for JOIN).";
+      showActionError(error, "GROUP", "", "CLIENT");
+      addLog(error, "error");
       return false;
     }
     return invoke("Group", action, target);
   }
   async function handleSendMessage() {
     const text = chatInput.trim();
-    if (!text || activeTab === "logs") return;
+    if (!text || !CHAT_CHANNELS.includes(activeTab)) return;
     if (await invoke("Chat", activeTab.toUpperCase(), text)) chatInput = "";
   }
   function handleKeyDown(e) {
@@ -425,7 +521,7 @@
     tick().then(() => globalThis.document?.getElementById('nearby-' + id)?.focus());
   }
   function handleGameShortcut(event) {
-    if (!connected || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || activeDialogue || showGroupModal || mapExpanded) return;
+    if (!connected || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || activeDialogue || activeItemInfo || showGroupModal || mapExpanded) return;
     if (event.target?.closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return;
     const action = {'1': callLook, '2': callStatus, '3': callQuests, '4': callWho, '5': () => showGroupModal = true}[event.key];
     if (action) { event.preventDefault(); action(); }
@@ -447,7 +543,7 @@
           <div class="form-group username-field">
             <label for="username">Player name</label>
             <input id="username" type="text" bind:value={username} placeholder="e.g. aris" required disabled={connecting} autocomplete="username" aria-describedby="username-hint" />
-            <small id="username-hint">3–20 lowercase letters, digits or underscores.</small>
+            <small id="username-hint">3–20 letters, digits or underscores. Uppercase letters are converted to lowercase.</small>
           </div>
           <div class="server-fields">
             <div class="form-group">
@@ -542,7 +638,11 @@
               <div class="inventory-item">
                 <span class="item-name">{item.name || item.id}</span>
                 <div class="npc-buttons">
-                  <button class="btn-action btn-talk" disabled={combatState === "EN_COMBAT"} on:click={() => callUse(item.id)}>Use</button>
+                  {#if canUseItem(item)}
+                    <button class="btn-action btn-talk" disabled={combatState === "EN_COMBAT" || playerHP >= playerMaxHP} on:click={() => callUse(item.id)} title={playerHP >= playerMaxHP ? 'Health is already full' : `Restore up to ${item.heal_value} HP`}>USE</button>
+                  {:else}
+                    <button class="btn-action btn-talk" on:click={() => callInfo(item.id)}>INFO</button>
+                  {/if}
                   <button class="btn-action btn-drop" disabled={combatState === "EN_COMBAT"} on:click={() => callDrop(item.id)}>Drop</button>
                 </div>
               </div>
@@ -560,16 +660,30 @@
             <button class="btn-tiny" on:click={callQuests} aria-label="Refresh quests"><Icon name="refresh" size={16}/></button>
           </div>
           <div class="quests-list">
-            {#each quests as q}
+            {#each quests as q (q.id)}
               <div class="quest-card-item">
                 <div class="quest-title-row">
-                  <span class="quest-title">{q.title || q.id}</span>
-                  <span class="quest-status-badge {q.status || 'active'}">{q.status || 'ACTIVE'}</span>
+                  <span class="quest-title">{q.title}</span>
+                  <span class="quest-status-badge {q.state}">{questStatusLabel(q)}</span>
                 </div>
-                <p class="quest-desc">{q.description || ''}</p>
-                {#if q.progress}<div class="quest-meta">Progress: {q.progress}</div>{/if}
+                {#if q.description}<p class="quest-desc">{q.description}</p>{/if}
+                {#if q.steps.length}
+                  <ol class="quest-steps" aria-label="Quest objectives">
+                    {#each q.steps as step}
+                      <li class:complete={step.completed}>
+                        <span class="quest-step-check" aria-label={step.completed ? 'Complete' : 'Incomplete'}>{step.completed ? '✓' : '○'}</span>
+                        <span>{step.label}{#if step.location_name}<span class="quest-step-location">{step.location_name}</span>{/if}{#if step.hint && q.state !== 'completed' && q.state !== 'unavailable'}<span class="quest-step-hint">{step.hint}</span>{/if}</span>
+                      </li>
+                    {/each}
+                  </ol>
+                {/if}
                 {#if q.giver}
-                  <div class="quest-meta">Giver: <strong>{q.giver.replace(/^npc\./, '')}</strong></div>
+                  <div class="quest-meta">Giver: <strong>{q.giver_name || displayQuestName(q.giver)}</strong></div>
+                {/if}
+                {#if q.reward}<div class="quest-meta">Reward: <strong>{q.reward}</strong>{#if q.reward_hp_heal} + up to {q.reward_hp_heal} HP restored{/if}</div>{/if}
+                <p class="quest-next"><strong>{q.state === 'completed' || q.state === 'unavailable' ? '' : 'Next: '}</strong>{questNextAction(q)}</p>
+                {#if canTalkToQuestGiver(q)}
+                  <button class="btn-action btn-quest" disabled={combatState === 'EN_COMBAT'} on:click={() => invoke(q.state === 'available' ? 'Quest' : 'Talk', q.giver)}>{q.state === 'available' ? 'Accept quest' : 'Claim reward'}</button>
                 {/if}
               </div>
             {/each}
@@ -577,6 +691,7 @@
               <div class="empty-list">Talk to a quest giver.</div>
             {/if}
           </div>
+          {#if quests.length}<p class="quest-meta quest-world-note">Each reward can be claimed once in this shared world.</p>{/if}
         </div>
 
         <!-- QUICK ACTION BUTTONS -->
@@ -597,13 +712,13 @@
     <section class="panel chat-panel">
       <div class="tabs-header">
         <button class="tab-btn {activeTab === 'global' ? 'active' : ''}" on:click={() => activeTab = 'global'}>
-          Global
+          GLOBAL
         </button>
         <button class="tab-btn {activeTab === 'room' ? 'active' : ''}" on:click={() => activeTab = 'room'}>
-          Room
+          ROOM
         </button>
         <button class="tab-btn {activeTab === 'group' ? 'active' : ''}" on:click={() => activeTab = 'group'}>
-          Party
+          GROUP
         </button>
         <button class="tab-btn {activeTab === 'logs' ? 'active' : ''}" on:click={() => activeTab = 'logs'}>
           Logs
@@ -624,7 +739,7 @@
       </div>
 
       <div class="chat-input-bar">
-        <span class="channel-indicator">#{activeTab === 'global' ? 'world' : activeTab === 'group' ? 'party' : activeTab}</span>
+        <span class="channel-indicator">#{activeTab.toUpperCase()}</span>
         <input
           type="text"
           aria-label="Chat message"
@@ -638,6 +753,9 @@
     </section>
 
     <!-- NPC DIALOGUE MODAL -->
+    {#if activeItemInfo}
+      <ItemInfo item={activeItemInfo} onclose={() => activeItemInfo = null} />
+    {/if}
     {#if activeDialogue}
       <div class="modal-backdrop">
         <div class="dialogue-card" role="dialog" aria-modal="true" aria-label="NPC Dialogue">
@@ -659,8 +777,8 @@
             <h3>Party</h3>
             <button class="btn-close" aria-label="Close party dialog" on:click={() => showGroupModal = false}><Icon name="close" size={16}/></button>
           </div>
-          <p class="subtitle" style="margin-bottom: 1rem;">Create a party, invite a player, or enter a leader’s username to join.</p>
-          {#if actionError}<div class="error-badge" role="alert">{actionError}</div>{/if}
+          <p class="subtitle" style="margin-bottom: 1rem;">Create a party, invite a player, or enter a leader’s username to join. Player names are case-insensitive.</p>
+          {#if groupError}<div class="error-badge" role="alert">{groupError}</div>{/if}
           {#if groupStatus}<p class="group-status" role="status">{groupStatus}</p>{/if}
           <div class="form-group" style="margin-bottom: 1rem;">
             <label for="groupTarget">Adventurer name</label>

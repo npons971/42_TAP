@@ -30,6 +30,7 @@
         <div id={`nearby-${item.id}`} class="nearby-card" class:selected={selectedEntity === item.id} tabindex="-1">
           <div class="entity-name"><strong>{item.name}</strong></div>
           {#if item.description}<p>{item.description}</p>{/if}
+          <button class="btn-action btn-talk" on:click={() => onaction('SendCommand', 'INFO ' + item.id)}>INFO</button>
           {#if item.obtainable}<button class="btn-action btn-take" disabled={inCombat} on:click={() => onaction('Take', item.id)}>Take</button>{:else}<span class="scenery-tag">Scenery</span>{/if}
         </div>
       {:else}<p class="empty-list">No objects.</p>{/each}

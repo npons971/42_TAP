@@ -73,11 +73,46 @@ L'interface propose les déplacements, TAKE/DROP/USE, TALK/QUEST, ATTACK/DEFEND/
 les quêtes et leur progression, les groupes CREATE/INVITE/JOIN/LEAVE et les chats
 GLOBAL/ROOM/GROUP. L'onglet des journaux est en lecture seule. Les commandes
 indisponibles en combat sont désactivées ; le serveur vérifie les actions.
-Les objets non consommables peuvent refuser USE avec une erreur visible.
+Les pseudos ciblés par INVITE/JOIN sont convertis en minuscules : `aris`,
+`ARIS` et `ArIs` désignent le même joueur, dans le GUI comme dans le CLI.
+Les erreurs de chat s'affichent dans le canal de la commande refusée, même si
+l'utilisateur a changé d'onglet. Les erreurs de gestion des groupes s'affichent
+dans GROUP ; les autres erreurs restent dans l'alerte et les journaux.
+Le dialogue de gestion du groupe affiche uniquement ses propres erreurs.
+Les rafraîchissements automatiques conservent l'erreur visible jusqu'à la
+prochaine action de l'utilisateur.
+Dans l'inventaire, **USE** est proposé uniquement pour les consommables de soin,
+hors combat et lorsque des PV manquent. Les autres objets proposent **INFO** :
+description, bonus d'attaque/défense et explication de leur usage. Les bonus
+d'équipement s'appliquent automatiquement tant que l'objet est porté ; seul le
+meilleur bonus de chaque statistique compte. INFO reste accessible en combat et
+depuis les objets au sol. La fiche se ferme avec son bouton ou Échap.
+Healing Salve remplace la torche sans effet et soigne de 25 PV ; la quête du
+bandit récompense désormais avec Captain's Shield (+8 défense).
+
+Le journal **Quests** affiche aussi les quêtes disponibles : titre, description,
+donneur et lieu, récompense, puis les deux étapes (collecter ou vaincre, puis
+livrer ou faire son rapport). Les étapes cochées suivent la possession actuelle
+des herbes ou la victoire personnelle ; la livraison reste à faire tant que la
+récompense n'a pas été reçue. **Next** indique l'action suivante et son lieu.
+**Accept quest** et **Claim reward** apparaissent lorsque le donneur est présent,
+et sont désactivés en combat. Les récompenses sont uniques dans le monde partagé ;
+le journal explique quand un autre joueur a obtenu une récompense ou porte les
+herbes recherchées. Les descriptions et dialogues du monde annoncent le retour
+au donneur, y compris après la victoire sur le bandit.
+
+Les chats suivent leur portée GLOBAL/ROOM/GROUP. Les présences, combats,
+objets et dialogues de PNJ s'affichent dans ROOM ; les invitations, adhésions,
+départs et changements de chef dans GROUP. STATS actualise le compteur du
+serveur. Les réponses de données actualisent uniquement le panneau de leur
+commande. Chaque réponse ou événement est journalisé une fois, y compris les
+OK sans contenu ; les événements inconnus ou incomplets restent dans les journaux.
 
 Les réponses sont corrélées avec les commandes envoyées. LOOK DETAILS,
-INVENTORY DETAILS et TALKJSON fournissent les descriptions depuis le serveur ;
-si ces extensions sont refusées, le client utilise LOOK, INVENTORY et TALK.
+INVENTORY DETAILS, QUESTS DETAILS et TALKJSON fournissent les descriptions depuis
+le serveur ; si ces extensions sont refusées, le client utilise LOOK, INVENTORY,
+QUESTS et TALK. Avec QUESTS seul, les identifiants sont convertis en noms lisibles
+et le journal invite à consulter le donneur pour les instructions manquantes.
 Aucun catalogue du monde n'est intégré dans le frontend. Les noms connus des
 salles sont mémorisés au cours de l'exploration.
 
