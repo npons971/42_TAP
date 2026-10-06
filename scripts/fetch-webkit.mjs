@@ -95,7 +95,10 @@ function include(pkg) {
     if (!alternative.installed) include(alternative);
   }
 }
-for (const name of ['libgtk-3-dev', 'libwebkit2gtk-4.1-dev', 'pkgconf', 'pkgconf-bin', 'libpkgconf3']) {
+const pkgConfigPackages = packages.has('pkgconf-bin')
+  ? ['pkgconf', 'pkgconf-bin', 'libpkgconf3']
+  : ['pkg-config'];
+for (const name of ['libgtk-3-dev', 'libwebkit2gtk-4.1-dev', ...pkgConfigPackages]) {
   const pkg = packages.get(name);
   if (!pkg) throw new Error('Package unavailable in this release: ' + name);
   include(pkg);
