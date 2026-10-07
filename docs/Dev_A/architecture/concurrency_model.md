@@ -1,6 +1,6 @@
 # Concurrency Model & Thread-Safety
 
-> **Document Status**: `🔴 TO_FILL (Model Decision Pending)`  
+> **Document Status**: `🟡 IN_PROGRESS (Initial model implemented)`
 > **Assigned to**: Aris (Dev A)  
 > **Last Updated**: 2026-10-07
 
@@ -52,7 +52,7 @@ The team must choose between two concurrency strategies:
 - *Pros*: Completely eliminates mutex contention and data race conditions by design.
 - *Risks*: Slightly higher boilerplate for command return channels.
 
-> **Decision**: `🔴 TO_FILL` — Record selected strategy and reasoning.
+> **Initial decision**: Use a single `sync.RWMutex` around the connected-player maps and positions. `LOOK` takes a read lock; `CONNECT`, `MOVE`, and disconnect take a write lock. Broadcasts only enqueue into bounded per-client channels while the lock is held; socket writes happen in dedicated writer goroutines. Revisit lock granularity if measurements show contention when combat and items are added.
 
 ---
 

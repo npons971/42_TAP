@@ -29,7 +29,7 @@ To track progress across the codebase and identify pending team decisions, every
 | Document | Focus | Assigned To | Status |
 |---|---|---|---|
 | [server_architecture.md](../Dev_A/architecture/server_architecture.md) | Dispatcher vs Router, GameState truth, World loader | Aris (Dev A) | `🔴 TO_FILL` |
-| [concurrency_model.md](../Dev_A/architecture/concurrency_model.md) | Goroutines topology, RWMutex vs Channels, Non-blocking broadcasting | Aris (Dev A) | `🔴 TO_FILL` |
+| [concurrency_model.md](../Dev_A/architecture/concurrency_model.md) | Goroutines topology, RWMutex, non-blocking broadcasting | Aris (Dev A) | `🟡 IN_PROGRESS` — initial server model implemented |
 
 ### 3. Server Logging & Security (`Dev_A/logging/`)
 | Document | Focus | Assigned To | Status |
