@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func startTestServer(t *testing.T) (string, context.CancelFunc, <-chan error) {
+func startTestServer(t *testing.T, worlds ...*World) (string, context.CancelFunc, <-chan error) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -26,6 +26,9 @@ func startTestServer(t *testing.T) (string, context.CancelFunc, <-chan error) {
 		"loc.town_square": {ID: "loc.town_square", Name: "Square", Description: "Town square", Exits: map[string]string{"north": "loc.garden"}},
 		"loc.garden":      {ID: "loc.garden", Name: "Garden", Description: "A quiet garden", Exits: map[string]string{"south": "loc.town_square"}},
 	}}
+	if len(worlds) > 0 {
+		world = worlds[0]
+	}
 	go func() {
 		done <- New(slog.New(slog.NewTextHandler(io.Discard, nil)), world).Serve(ctx, listener)
 	}()
@@ -287,7 +290,7 @@ func TestCommandErrorsAreSpecific(t *testing.T) {
 		{"MOVE diagonal", `ERR invalid_direction Direction "diagonal" is unknown; available from loc.town_square: north`},
 		{"MOVE west", "ERR invalid_direction No west exit from loc.town_square; available directions: north"},
 		{"CHAT ROOM ", "ERR invalid_arguments CHAT message cannot be empty"},
-		{"TAKE item.apple", `ERR not_implemented Command "TAKE" is not implemented yet`},
+		{"TALK npc.guard", `ERR not_implemented Command "TALK" is not implemented yet`},
 		{"HO", `ERR unknown_command Unknown command "HO"`},
 		{"QUIT extra", "ERR invalid_arguments QUIT takes no arguments"},
 		{"WHO", `OK {"room":["alice"],"server":1}`},

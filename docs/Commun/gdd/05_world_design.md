@@ -123,24 +123,41 @@ graph TD
 
 ---
 
-## 3. Schéma de Données (Format YAML / JSON)
+## 3. Schéma de Données (JSON)
 
-Le fichier du monde (`world.yaml` ou `world.json`) respecte la structure type suivante :
+Le serveur charge `data/world.json`. Ce fichier contient le catalogue des objets uniques dans `world.items` et leur placement initial dans `world.locations.<id>.items`. Chaque objet doit être déclaré une seule fois et placé dans exactement une salle. Le chargement refuse les IDs inconnus, les doublons et les objets sans salle initiale.
 
 Les identifiants suivent la [convention du protocole](../protocol/rfc_syntax.md) : `loc.*` pour les salles, `item.*` pour chaque instance physique unique, `npc.*` pour les PNJ et `quest.*` pour les quêtes. Ils sont stables, uniques, en ASCII minuscule avec `_` entre les mots ; les noms affichés restent du texte UTF-8. Deux exemplaires d'un objet reçoivent deux IDs différents, par exemple `item.apple_1` et `item.apple_2`.
 
-```yaml
-world:
-  locations:
-    loc.town_square:
-      name: "Place du Village"
-      description: "Une vaste place pavée baignée d'une lumière douce..."
-      exits:
-        east: "loc.market"
-        north: "loc.garden"
-        west: "loc.dark_alley"
-      items: []
-      spawns:
-        - npc_type: "npc.guard"
-          count: 1
+Exemple minimal du format chargé :
+
+```json
+{
+  "world": {
+    "start": "loc.town_square",
+    "items": [
+      {"id": "item.apple", "name": "Pomme fraîche", "obtainable": true}
+    ],
+    "locations": {
+      "loc.town_square": {
+        "name": "Place du Village",
+        "description": "Une vaste place pavée.",
+        "exits": {"north": "loc.garden"},
+        "items": ["item.apple"]
+      },
+      "loc.garden": {
+        "name": "Jardin",
+        "description": "Un jardin paisible.",
+        "exits": {"south": "loc.town_square"},
+        "items": []
+      }
+    }
+  }
+}
 ```
+
+`obtainable: false` permet d'afficher un objet fixe dans `LOOK` tout en refusant `TAKE`. Les noms sont du texte UTF-8 sur une seule ligne, sans tabulation ni espaces en début ou fin.
+
+Le fichier actuel est un monde de test de deux salles ; ses placements servent aux essais du serveur. Le monde complet décrit dans les sections 1 et 2 sera fourni par le Dev B. Le schéma des PNJ sera ajouté avec leur implémentation.
+
+Pendant l'exécution, le serveur conserve une position unique par objet : une salle ou l'inventaire d'un joueur. `TAKE` et `DROP` modifient cette position ; `LOOK` et `INVENTORY` lisent l'état courant. À la déconnexion, les objets portés sont déposés dans la salle actuelle du joueur. Un redémarrage recharge les placements initiaux du fichier.

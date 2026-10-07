@@ -35,9 +35,9 @@ If the server writes directly to a TCP socket in the broadcaster loop, a slow, u
 
 ---
 
-## 2. Shared State Synchronization `🔴 TO_FILL`
+## 2. Shared State Synchronization `🟡 IMPLEMENTED`
 
-The team must choose between two concurrency strategies:
+The initial implementation uses option A. Option B remains an alternative if later measurements justify changing the model.
 
 ### Option A: Read-Write Mutex (`sync.RWMutex`)
 - Protect `GameState` with a global `sync.RWMutex` (or fine-grained per-room mutexes).
@@ -52,7 +52,9 @@ The team must choose between two concurrency strategies:
 - *Pros*: Completely eliminates mutex contention and data race conditions by design.
 - *Risks*: Slightly higher boilerplate for command return channels.
 
-> **Initial decision**: Use a single `sync.RWMutex` around the connected-player maps and positions. `LOOK` takes a read lock; `CONNECT`, `MOVE`, and disconnect take a write lock. Broadcasts only enqueue into bounded per-client channels while the lock is held; socket writes happen in dedicated writer goroutines. Revisit lock granularity if measurements show contention when combat and items are added.
+> **Initial decision**: Use a single `sync.RWMutex` around the connected-player maps, player positions and `itemLocations`. `LOOK`, `WHO`, `STATUS` and `INVENTORY` take a read lock; `CONNECT`, `MOVE`, `TAKE`, `DROP` and disconnect take a write lock. Broadcasts only enqueue into bounded per-client channels while the lock is held; socket writes happen in dedicated writer goroutines. Revisit lock granularity if measurements show contention when combat is added.
+
+Each unique item has one authoritative runtime position: either a room ID or a player owner. `TAKE` and `DROP` resolve the target, check ownership, enqueue the success response and change ownership under the same write lock. Two concurrent `TAKE` commands therefore cannot acquire the same instance. The actor receives the success response before their `EVT ROOM ITEM` event. The catalogue and initial room placements remain static; `LOOK` uses runtime positions.
 
 ---
 
@@ -80,8 +82,8 @@ func (b *Broadcaster) BroadcastToRoom(roomID string, message string) {
 ```
 
 ### Safe Disconnect Sequence
-1. TCP read loop detects `io.EOF` or connection error.
-2. Unregister player from `GameState` and close client's `outbox` channel.
-3. Broadcast `EVT ROOM PRESENCE LEAVE <username>` to room occupants.
-4. Close TCP socket and terminate goroutines.
-5. Log event with timestamp and IP address.
+1. TCP read loop detects `QUIT`, `io.EOF` or connection error.
+2. Under the write lock, remove the player from the connected-player map.
+3. Return each held item to the player's current room and enqueue `EVT ROOM ITEM DROP <username> <item_id>` for remaining occupants, sorted by item ID.
+4. Enqueue `EVT ROOM PRESENCE LEAVE <username>` and unregister the connection while still under the lock.
+5. Release the lock, close the client's `outbox`, let the writer finish, close the TCP socket and log the disconnect. Removal from the maps prevents subsequent broadcasts from targeting this channel.

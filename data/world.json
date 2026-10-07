@@ -1,16 +1,24 @@
 {
   "world": {
     "start": "loc.town_square",
+    "items": [
+      {"id": "item.apple", "name": "Pomme fraîche", "obtainable": true},
+      {"id": "item.fountain", "name": "Fontaine de pierre", "obtainable": false},
+      {"id": "item.rusty_sword", "name": "Épée rouillée", "obtainable": true},
+      {"id": "item.ancient_key", "name": "Clé ancienne", "obtainable": true}
+    ],
     "locations": {
       "loc.town_square": {
         "name": "Place du Village",
         "description": "Une place pavee au centre du village.",
-        "exits": {"north": "loc.garden"}
+        "exits": {"north": "loc.garden"},
+        "items": ["item.apple", "item.fountain"]
       },
       "loc.garden": {
         "name": "Jardin Abandonne",
         "description": "Un jardin calme envahi par les herbes.",
-        "exits": {"south": "loc.town_square"}
+        "exits": {"south": "loc.town_square"},
+        "items": ["item.rusty_sword", "item.ancient_key"]
       }
     }
   }

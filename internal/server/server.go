@@ -43,23 +43,31 @@ type client struct {
 
 // Server owns the connected-player state. World data is immutable after load.
 type Server struct {
-	logger  *slog.Logger
-	world   *World
-	mu      sync.RWMutex
-	clients map[net.Conn]*client
-	players map[string]*client
-	wg      sync.WaitGroup
+	logger        *slog.Logger
+	world         *World
+	mu            sync.RWMutex
+	clients       map[net.Conn]*client
+	players       map[string]*client
+	itemLocations map[string]itemLocation // One authoritative location per instance.
+	wg            sync.WaitGroup
 }
 
 func New(logger *slog.Logger, world *World) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{
+	s := &Server{
 		logger: logger, world: world,
-		clients: make(map[net.Conn]*client),
-		players: make(map[string]*client),
+		clients:       make(map[net.Conn]*client),
+		players:       make(map[string]*client),
+		itemLocations: make(map[string]itemLocation),
 	}
+	for roomID, room := range world.Locations {
+		for _, itemID := range room.Items {
+			s.itemLocations[itemID] = itemLocation{roomID: roomID}
+		}
+	}
+	return s
 }
 
 // Serve stops accepting and closes all active sessions when ctx is cancelled.
@@ -146,6 +154,7 @@ func (s *Server) disconnect(c *client) {
 	username := c.username
 	if username != "" {
 		delete(s.players, username)
+		s.dropInventoryLocked(c)
 		s.broadcastRoomLocked(c.roomID, c, "EVT ROOM PRESENCE LEAVE "+username)
 	}
 	delete(s.clients, c.conn)
@@ -161,6 +170,9 @@ func (s *Server) handleCommand(c *client, line string) bool {
 	verb, rest, hasArgs := strings.Cut(line, " ")
 	if verb == "CHAT" {
 		return s.chat(c, rest, hasArgs)
+	}
+	if verb == "TAKE" || verb == "DROP" {
+		return s.transferItem(c, verb, rest, hasArgs)
 	}
 	args := strings.Split(line, " ")
 	if strings.ContainsRune(line, '\t') || args[0] == "" {
@@ -182,6 +194,8 @@ func (s *Server) handleCommand(c *client, line string) bool {
 		return s.who(c, args)
 	case "STATUS":
 		return s.status(c, args)
+	case "INVENTORY":
+		return s.inventory(c, args)
 	case "QUIT":
 		if len(args) != 1 {
 			return sendError(c, "invalid_arguments", "QUIT takes no arguments")
@@ -214,7 +228,7 @@ func shortVerb(verb string) string {
 
 func isPlannedCommand(verb string) bool {
 	switch verb {
-	case "TAKE", "DROP", "INVENTORY", "TALK", "ATTACK", "QUEST", "QUESTS", "GROUP":
+	case "TALK", "ATTACK", "QUEST", "QUESTS", "GROUP":
 		return true
 	default:
 		return false
@@ -258,6 +272,7 @@ func (s *Server) look(c *client, args []string) bool {
 		return notAuthenticated(c, "LOOK")
 	}
 	room := s.world.Locations[c.roomID]
+	items := s.roomItemsLocked(c.roomID)
 	players := make([]string, 0)
 	for username, other := range s.players {
 		if other.roomID == c.roomID {
@@ -267,11 +282,11 @@ func (s *Server) look(c *client, args []string) bool {
 	s.mu.RUnlock()
 	sort.Strings(players)
 	payload, err := json.Marshal(struct {
-		Room    Room          `json:"room"`
+		Room    roomView      `json:"room"`
 		Players []string      `json:"players"`
-		Items   []interface{} `json:"items"`
+		Items   []Item        `json:"items"`
 		NPCs    []interface{} `json:"npcs"`
-	}{Room: room, Players: players, Items: []interface{}{}, NPCs: []interface{}{}})
+	}{Room: roomView{ID: room.ID, Name: room.Name, Description: room.Description, Exits: room.Exits}, Players: players, Items: items, NPCs: []interface{}{}})
 	if err != nil {
 		s.logger.Error("serialize LOOK failed", "error", err)
 		return sendError(c, "internal_error", "LOOK response could not be encoded")
