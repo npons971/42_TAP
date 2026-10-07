@@ -66,11 +66,11 @@ func TestConcurrentClientsAndShutdown(t *testing.T) {
 	if _, err := io.WriteString(bob, "PING\n"); err != nil {
 		t.Fatal(err)
 	}
-	expectLine(t, bobReader, "ERR unknown_command Unknown command")
+	expectLine(t, bobReader, `ERR unknown_command Unknown command "PING"`)
 	if _, err := io.WriteString(alice, "PING\n"); err != nil {
 		t.Fatal(err)
 	}
-	expectLine(t, aliceReader, "ERR unknown_command Unknown command")
+	expectLine(t, aliceReader, `ERR unknown_command Unknown command "PING"`)
 
 	if _, err := io.WriteString(alice, "QUIT\n"); err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestConcurrentClientsAndShutdown(t *testing.T) {
 	if _, err := io.WriteString(bob, "PING\n"); err != nil {
 		t.Fatal(err)
 	}
-	expectLine(t, bobReader, "ERR unknown_command Unknown command")
+	expectLine(t, bobReader, `ERR unknown_command Unknown command "PING"`)
 
 	cancel()
 	select {
@@ -107,8 +107,8 @@ func TestOversizedLineDoesNotBreakFollowingRequest(t *testing.T) {
 	if _, err := io.WriteString(conn, strings.Repeat("x", maxLineBytes)+"\nPING\n"); err != nil {
 		t.Fatal(err)
 	}
-	expectLine(t, reader, "ERR invalid_arguments Message too long")
-	expectLine(t, reader, "ERR unknown_command Unknown command")
+	expectLine(t, reader, "ERR invalid_arguments Line exceeds 4096 bytes")
+	expectLine(t, reader, `ERR unknown_command Unknown command "PING"`)
 }
 
 func sendCommand(t *testing.T, conn net.Conn, command string) {
@@ -154,21 +154,23 @@ func TestConnectLookMoveAndPresence(t *testing.T) {
 	bob, bobReader := dialTestClient(t, addr)
 
 	sendCommand(t, alice, "LOOK")
-	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT first")
+	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT <username> before LOOK")
 	sendCommand(t, alice, "CONNECT")
-	expectLine(t, aliceReader, "ERR invalid_arguments CONNECT needs one username")
+	expectLine(t, aliceReader, "ERR invalid_arguments Usage: CONNECT <username>")
 	sendCommand(t, alice, "CONNECT N")
-	expectLine(t, aliceReader, "ERR invalid_arguments Invalid username")
+	expectLine(t, aliceReader, "ERR invalid_arguments CONNECT username must start with a lowercase letter and contain 3-20 lowercase letters, digits or underscores")
+	sendCommand(t, alice, "CONNECT ARIS")
+	expectLine(t, aliceReader, "ERR invalid_arguments CONNECT username must start with a lowercase letter and contain 3-20 lowercase letters, digits or underscores")
 	sendCommand(t, alice, "CONNECT  alice")
-	expectLine(t, aliceReader, "ERR invalid_arguments Invalid spacing")
+	expectLine(t, aliceReader, "ERR invalid_arguments CONNECT must use one space between fixed arguments")
 	sendCommand(t, alice, "CONNECT alice")
 	expectLine(t, aliceReader, "OK connected")
 	sendCommand(t, alice, "CONNECT alice")
-	expectLine(t, aliceReader, "ERR already_authenticated Already connected")
+	expectLine(t, aliceReader, `ERR already_authenticated Connection already uses username "alice"`)
 	sendCommand(t, bob, "MOVE north")
-	expectLine(t, bobReader, "ERR not_authenticated Send CONNECT first")
+	expectLine(t, bobReader, "ERR not_authenticated Send CONNECT <username> before MOVE")
 	sendCommand(t, bob, "CONNECT alice")
-	expectLine(t, bobReader, "ERR username_taken Username already in use")
+	expectLine(t, bobReader, `ERR username_taken Username "alice" is already connected`)
 	sendCommand(t, bob, "CONNECT bob")
 	expectLine(t, bobReader, "OK connected")
 	expectLine(t, aliceReader, "EVT ROOM PRESENCE ENTER bob")
@@ -178,7 +180,7 @@ func TestConnectLookMoveAndPresence(t *testing.T) {
 	sendCommand(t, alice, "LOOK extra")
 	expectLine(t, aliceReader, "ERR invalid_arguments LOOK takes no arguments")
 	sendCommand(t, alice, "MOVE")
-	expectLine(t, aliceReader, "ERR invalid_arguments MOVE needs one direction")
+	expectLine(t, aliceReader, "ERR invalid_arguments Usage: MOVE <direction>; available from loc.town_square: north")
 	sendCommand(t, alice, "MOVE north")
 	expectLine(t, aliceReader, "OK room=loc.garden")
 	expectLine(t, bobReader, "EVT ROOM PRESENCE LEAVE alice")
@@ -190,7 +192,7 @@ func TestConnectLookMoveAndPresence(t *testing.T) {
 	sendCommand(t, alice, "LOOK")
 	expectLook(t, aliceReader, "loc.garden", []string{"alice", "bob"})
 	sendCommand(t, bob, "MOVE west")
-	expectLine(t, bobReader, "ERR invalid_direction No exit in that direction")
+	expectLine(t, bobReader, "ERR invalid_direction No west exit from loc.garden; available directions: south")
 	sendCommand(t, bob, "QUIT now")
 	expectLine(t, bobReader, "ERR invalid_arguments QUIT takes no arguments")
 	sendCommand(t, bob, "QUIT")
@@ -230,11 +232,11 @@ func TestChatWhoAndStatus(t *testing.T) {
 	bob, bobReader := dialTestClient(t, addr)
 
 	sendCommand(t, alice, "WHO")
-	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT first")
+	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT <username> before WHO")
 	sendCommand(t, alice, "STATUS")
-	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT first")
+	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT <username> before STATUS")
 	sendCommand(t, alice, "CHAT GLOBAL Hello")
-	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT first")
+	expectLine(t, aliceReader, "ERR not_authenticated Send CONNECT <username> before CHAT")
 	sendCommand(t, alice, "CONNECT alice")
 	expectLine(t, aliceReader, "OK connected")
 	sendCommand(t, bob, "CONNECT bob")
@@ -262,9 +264,35 @@ func TestChatWhoAndStatus(t *testing.T) {
 	sendCommand(t, bob, "STATUS")
 	expectLine(t, bobReader, `OK {"player":"bob","hp":100,"max_hp":100,"state":"HORS_COMBAT","combat":null}`)
 	sendCommand(t, bob, "CHAT ROOM")
-	expectLine(t, bobReader, "ERR invalid_arguments CHAT needs a channel and message")
+	expectLine(t, bobReader, "ERR invalid_arguments Usage: CHAT <GLOBAL|ROOM|GROUP> <message>")
 	sendCommand(t, bob, "CHAT PRIVATE Hello")
-	expectLine(t, bobReader, "ERR invalid_arguments Invalid chat channel")
+	expectLine(t, bobReader, `ERR invalid_arguments CHAT channel "PRIVATE" is invalid; use GLOBAL, ROOM or GROUP`)
 	sendCommand(t, bob, "CHAT GROUP Hello")
-	expectLine(t, bobReader, "ERR invalid_arguments Not in a group")
+	expectLine(t, bobReader, "ERR group_required CHAT GROUP requires group membership; GROUP is not implemented yet")
+}
+
+func TestCommandErrorsAreSpecific(t *testing.T) {
+	addr, cancel, done := startTestServer(t)
+	defer func() { cancel(); <-done }()
+	conn, reader := dialTestClient(t, addr)
+
+	for _, step := range []struct{ command, reply string }{
+		{"", "ERR invalid_arguments Empty command"},
+		{"LOOK\r", "ERR invalid_arguments Use LF without CR"},
+		{"CONNECT", "ERR invalid_arguments Usage: CONNECT <username>"},
+		{"CONNECT alice", "OK connected"},
+		{"WHO extra", "ERR invalid_arguments WHO takes no arguments"},
+		{"STATUS extra", "ERR invalid_arguments STATUS takes no arguments"},
+		{"MOVE", "ERR invalid_arguments Usage: MOVE <direction>; available from loc.town_square: north"},
+		{"MOVE diagonal", `ERR invalid_direction Direction "diagonal" is unknown; available from loc.town_square: north`},
+		{"MOVE west", "ERR invalid_direction No west exit from loc.town_square; available directions: north"},
+		{"CHAT ROOM ", "ERR invalid_arguments CHAT message cannot be empty"},
+		{"TAKE item.apple", `ERR not_implemented Command "TAKE" is not implemented yet`},
+		{"HO", `ERR unknown_command Unknown command "HO"`},
+		{"QUIT extra", "ERR invalid_arguments QUIT takes no arguments"},
+		{"WHO", `OK {"room":["alice"],"server":1}`},
+	} {
+		sendCommand(t, conn, step.command)
+		expectLine(t, reader, step.reply)
+	}
 }

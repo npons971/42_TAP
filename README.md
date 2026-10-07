@@ -11,6 +11,10 @@ The Go TCP server accepts multiple simultaneous connections, sends
 are future milestones.
 `CHAT GROUP` will become available when groups are implemented.
 The proposed wire contract is in [the protocol documentation](docs/Commun/protocol/rfc_syntax.md).
+Errors use `ERR <code> <specific message>`. For example, `CONNECT ARIS` explains
+the lowercase username rule, `MOVE west` lists the current room's available
+exits, and `WHO extra` says that `WHO` takes no arguments. Recognized
+commands still under development return `ERR not_implemented`.
 
 Go 1.22 or newer is required. Run the server on the default port 4242:
 
@@ -23,6 +27,11 @@ To use another listen address:
 ```sh
 make run-server SERVER_ADDR=127.0.0.1:4243
 ```
+
+Usernames must be 3–20 ASCII characters, start with a lowercase letter, and
+contain only lowercase letters, digits, or underscores. For example,
+`CONNECT aris` is valid; `CONNECT ARIS` is rejected. After a failed `CONNECT`,
+you can retry on the same connection. `QUIT` closes that connection.
 
 Use `nc 127.0.0.1 4242` from another terminal to connect. Each client first
 receives the greeting. Then try:
