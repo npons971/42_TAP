@@ -1,5 +1,5 @@
 <script>
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
 
   // Connection State
   let connected = false;
@@ -68,11 +68,12 @@
   };
 
   // Auto-scroll chat view to bottom
-  async function scrollToBottom() {
-    await tick();
-    if (chatViewport) {
-      chatViewport.scrollTop = chatViewport.scrollHeight;
-    }
+  function scrollToBottom() {
+    setTimeout(() => {
+      if (chatViewport) {
+        chatViewport.scrollTop = chatViewport.scrollHeight;
+      }
+    }, 0);
   }
 
   // Helper for adding messages
@@ -104,8 +105,9 @@
     addLog("Client GUI initialized. Ready to connect to RFC 42TAP Server.", "info");
 
     if (window.runtime) {
-      window.runtime.EventsOn("server_ok", (payload) => handleServerOK(payload));
-      window.runtime.EventsOn("server_err", (payload) => handleServerERR(payload));
+      window.runtime.EventsOn("server_reply", ({kind, command, payload, request}) => {
+        if (kind === "OK") handleServerOK(payload, command); else handleServerERR(payload, command, request);
+      });
       window.runtime.EventsOn("server_evt", (payload) => handleServerEVT(payload));
       window.runtime.EventsOn("disconnected", (msg) => {
         connected = false;
@@ -119,7 +121,7 @@
   });
 
   // Server Payload Parsing
-  function handleServerOK(payload) {
+  function handleServerOK(payload, command = "") {
     if (!payload) return;
     addLog(`S: OK ${payload}`, "ok");
 
@@ -144,7 +146,7 @@
         const data = JSON.parse(payload);
 
         // LOOK payload
-        if (data.room) {
+        if (data.room && !Array.isArray(data.room) && data.room.id) {
           currentRoom = {
             id: data.room.id || "unknown",
             name: data.room.name || "Unknown Room",
@@ -159,10 +161,10 @@
         }
 
         // STATUS payload
-        if (data.player !== undefined && data.hp !== undefined) {
+        if (data.hp !== undefined && data.max_hp !== undefined) {
           playerHP = data.hp;
           playerMaxHP = data.max_hp || 100;
-          combatState = data.state || "HORS_COMBAT";
+          combatState = data.state || (data.status === "combat" ? "EN_COMBAT" : "HORS_COMBAT");
           currentTarget = data.combat || null;
           return;
         }
@@ -177,10 +179,8 @@
         // INVENTORY payload (Array)
         if (Array.isArray(data)) {
           // Could be INVENTORY or QUESTS
-          if (data.length === 0) {
-            inventory = [];
-          } else if (data[0].title || data[0].giver) {
-            quests = data;
+          if (command === "QUESTS" || (data[0] && (data[0].quest_id || data[0].title))) {
+            quests = data.map(q => ({...q, id: q.quest_id || q.id, title: q.title || q.quest_id || q.id}));
           } else {
             inventory = normalizeItems(data);
           }
@@ -199,7 +199,12 @@
     }
 
     // Key-value OK responses: OK room=loc.market, OK taken=item.apple, etc.
-    if (payload.startsWith("room=")) {
+    if (command === "TALK") {
+      activeDialogue = {npc: "NPC", text: payload};
+      addMessage("room", "NPC", payload, "dialogue");
+    } else if (payload.startsWith("players=")) {
+      serverPlayersCount = Number(payload.slice(8));
+    } else if (payload.startsWith("room=")) {
       // Room changed, refresh look
       callLook();
     } else if (payload.startsWith("taken=") || payload.startsWith("dropped=")) {
@@ -229,7 +234,16 @@
     });
   }
 
-  function handleServerERR(payload) {
+  function handleServerERR(payload, command = "", request = "") {
+    const backend = getBackend();
+    if (/^400 (INVALID_ARGUMENTS|UNKNOWN_COMMAND)\b/.test(payload)) {
+      const fallback = request === "LOOK DETAILS" ? "LOOK" : request === "INVENTORY DETAILS" ? "INVENTORY" : request.startsWith("TALKJSON ") ? request.replace(/^TALKJSON /, "TALK ") : null;
+      if (fallback && backend) { backend.SendCommand(fallback).catch(e => addLog(String(e), "error")); return; }
+    }
+    if (command === "CONNECT") {
+      connecting = false; connected = false; connectionError = payload;
+      if (backend) backend.Disconnect().catch(e => addLog(String(e), "error"));
+    }
     addLog(`S: ERR ${payload}`, "error");
     addMessage("room", "SERVER", `Error: ${payload}`, "error");
     if (connecting) {
@@ -246,7 +260,11 @@
     const evtType = parts[1] || "";
     const rest = parts.slice(2).join(" ");
 
-    if (evtType === "CHAT") {
+    if (scope === "stats" && evtType.startsWith("players=")) {
+      serverPlayersCount = Number(evtType.slice(8));
+    } else if (scope === "group" && ["INVITE", "JOIN", "LEAVE", "LEADER"].includes(evtType)) {
+      addMessage("group", "GROUP", `${evtType}: ${rest}`, "system");
+    } else if (evtType === "CHAT") {
       const sender = parts[2] || "someone";
       const text = parts.slice(3).join(" ");
       addMessage(scope, sender, text, "chat");
@@ -269,6 +287,10 @@
       const text = `${actor} ${actionVerb} ${cleanItem} (${itemId}).`;
       addMessage("room", "ROOM", text, "item");
       callLook();
+      if (parts[3] === username.trim() && ["USE", "DELIVER", "REWARD"].includes(parts[2])) {
+        callInventory();
+        callStatus();
+      }
     }
   }
 

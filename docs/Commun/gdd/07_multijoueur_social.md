@@ -49,21 +49,18 @@ Dès qu'un joueur change de salle via `MOVE <direction>`, deux événements asyn
    `EVT ROOM PRESENCE ENTER <pseudo>`
 
 ### Commande `WHO`
-Permet à tout moment d'obtenir la visibilité sur la communauté :
-- Joueurs présents dans la salle courante.
-- Nombre total de joueurs connectés sur le serveur.
-- Exemple de retour serveur :
-  ```json
-  OK { "room": ["alice", "bob"], "server": 5 }
-  ```
 
----
+Renvoie `OK players=<nombre>` pour le nombre de joueurs authentifiés sur le
+serveur. LOOK fournit les pseudos de la salle ; WHO DETAILS fournit en extension
+`{"room":["alice"],"server":2}`. EVT STATS players=<nombre> actualise le comptage
+après connexion ou déconnexion.
 
 ## 3. Système de Groupe (`GROUP`)
 
 Le système de groupe permet à 2 joueurs ou plus de former une escouade :
-- `GROUP CREATE <nom_groupe>` : Création d'une escouade.
-- `GROUP JOIN <nom_groupe>` : Rejoindre un groupe existant.
+- `GROUP CREATE` : Création d'une escouade.
+- `GROUP INVITE <pseudo>` : Invitation privée annonçant le chef du groupe.
+- `GROUP JOIN <nom_du_chef>` : Rejoindre un groupe existant.
 - `GROUP LEAVE` : Quitter son groupe actuel.
 - **Avantages de jeu** : accès au canal `CHAT GROUP` et partage possible des informations de quête.
 
@@ -76,3 +73,8 @@ Le système de groupe permet à 2 joueurs ou plus de former une escouade :
   - Retrait du joueur de la salle.
   - Broadcast immédiat `EVT ROOM PRESENCE LEAVE <pseudo>` aux joueurs voisins.
   - Le serveur continue d'émettre aux autres clients sans aucun crash ni interruption de flux.
+
+CREATE et JOIN répondent OK group=<id généré>. JOIN/LEAVE sont annoncés aux
+membres ; les groupes fonctionnent entre salles. Les invitations sont
+informatives. Si le chef part, le premier pseudo restant dans l'ordre trié
+le remplace (EVT GROUP LEADER en extension). Le dernier départ supprime le groupe.

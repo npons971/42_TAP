@@ -1,3 +1,5 @@
+# Original Dev B design snapshot. Runtime source of truth: data/world.json.
+# The server does not load this YAML; edit data/world.json for gameplay changes.
 world:
   metadata:
     name: "The Answer Protocol Realm"

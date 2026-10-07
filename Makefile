@@ -1,4 +1,4 @@
-.PHONY: install clean build-server run-server test-server build-frontend test-client test-integration test-all
+.PHONY: install clean build-server run-server test-server build-cli run-cli test test-cli-pty test-gui build-frontend test-client test-integration test-all
 
 PROJECT_ROOT := $(CURDIR)
 GO := $(PROJECT_ROOT)/go
@@ -7,30 +7,56 @@ NPM := $(PROJECT_ROOT)/npm
 WAILS := $(PROJECT_ROOT)/wails
 
 SERVER_ADDR ?= :4242
+WORLD_FILE ?= data/world.json
+CLI_ADDR ?= 127.0.0.1:4242
+export GOPATH := $(CURDIR)/.go-work
+export GOCACHE := $(CURDIR)/.go-cache
 
-build-server:
+build-server: go
 	mkdir -p .build
-	$(GO) build -o .build/tap-server ./cmd/server
+	./go build -o .build/tap-server ./cmd/server
 
-run-server:
-	$(GO) run ./cmd/server -addr "$(SERVER_ADDR)"
+run-server: go
+	./go run ./cmd/server -addr "$(SERVER_ADDR)" -world "$(WORLD_FILE)"
 
-test-server:
+test-server: go
 	@if command -v gcc >/dev/null 2>&1; then \
-		$(GO) test -race ./internal/server; \
+		./go test -race ./internal/server; \
 	else \
-		$(GO) test ./internal/server; \
+		./go test ./internal/server; \
 	fi
 
-build-frontend:
-	$(NPM) --prefix Project/client-gui/frontend run build
+build-cli: go
+	mkdir -p .build
+	./go build -o .build/tap-cli ./cmd/client-cli
 
-test-client:
+run-cli: go
+	./go run ./cmd/client-cli -addr "$(CLI_ADDR)"
+
+test: go
+	@if command -v gcc >/dev/null 2>&1; then \
+		./go test -race ./...; \
+	else \
+		./go test ./...; \
+	fi
+
+build-frontend: npm
+	./npm --prefix Project/client-gui/frontend run build
+
+test-client: go
 	cd Project/client-gui && GOPATH="$(PROJECT_ROOT)/.go-work" GOCACHE="$(PROJECT_ROOT)/.go-cache" $(GO) test -v .
 
 test-integration: test-client
 
-test-all: test-server test-client
+test-gui: go npm
+	cd Project/client-gui && GOPATH="$(PROJECT_ROOT)/.go-work" GOCACHE="$(PROJECT_ROOT)/.go-cache" ../../go test app.go app_test.go
+	cd Project/client-gui/frontend && ../../../npm run build
+	./node scripts/test-gui-protocol.mjs
+
+test-cli-pty: build-cli
+	python3 scripts/test-cli-pty.py
+
+test-all: test-server test-client test-gui test-cli-pty
 
 install: go npm wails .webkit-sdk/.installed
 

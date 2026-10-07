@@ -1,169 +1,97 @@
-# RFC 42TAP — JSON Payloads Specification
+# RFC 42TAP — JSON payloads
 
-> **Document Status**: `🔵 IN_REVIEW (Dev A proposal; Dev B review pending)`
-> **Assigned to**: Aris (Dev A) & Novanns (Dev B)  
-> **Last Updated**: 2026-10-07
+Updated: 2026-10-07. Source: [external RFC](external_rfc.html).
+All JSON is compact on the wire; examples below may be formatted for reading.
+Maximum complete line: 4,096 UTF-8 bytes including `OK ` and LF.
 
-The protocol returns one compact JSON value after `OK ` for complex state responses. These are the proposed field names and types for both clients. The wire-format rules and identifier conventions are in [rfc_syntax.md](rfc_syntax.md). The attached RFC takes precedence if it mandates a different exact shape.
-
-All listed fields are present, even when their arrays are empty. IDs are stable and globally unique; display names are UTF-8 text. The server serializes each payload on one line and keeps the complete line, including LF, within 4,096 bytes.
-
----
-
-## 1. `LOOK` Payload
-
-Sent in response to the `LOOK` command.
-
-### Proposed schema `🔵 IN_REVIEW`
+## LOOK
 
 ```json
-{
-  "room": {
-    "id": "loc.town_square",
-    "name": "Village Square",
-    "description": "A bustling cobblestone square surrounded by warm timber houses.",
-    "exits": {
-      "north": "loc.garden",
-      "east": "loc.market",
-      "west": "loc.dark_alley"
-    }
-  },
-  "players": ["alice", "bob"],
-  "items": [
-    {
-      "id": "item.apple",
-      "name": "Fresh Apple",
-      "obtainable": true
-    }
-  ],
-  "npcs": [
-    {
-      "id": "npc.guard",
-      "name": "Village Guard",
-      "role": "dialogue"
-    }
-  ]
+{"room":{"id":"loc.town_square","name":"Village Square","description":"A village square.","exits":{"north":"loc.garden"}},"players":["alice"],"items":["item.fountain"],"npcs":["npc.guard"]}
 ```
 
-`room.id`, `room.name`, and `room.description` are strings. `room.exits` maps lowercase directions to room IDs. `players` is an array of usernames in the room, including the requester. `items` is an array of `{id:string,name:string,obtainable:boolean}` objects; `npcs` is an array of `{id:string,name:string,role:string}` objects. Use `[]` for empty lists and `{}` for a room without exits. The detailed descriptors let the GUI render without a separate catalogue request.
-
-> **Design Decision `🟢 VALIDATED (Both Dev A & Dev B)`**:  
-> Detailed descriptor objects are adopted. This allows the GUI client to immediately render button labels, item badges, and tooltips without generating extra network round-trips.
-
----
-
-## 2. `STATUS` Payload
-
-Sent in response to `STATUS`.
-
-### Proposed schema `🔵 IN_REVIEW`
+Arrays contain IDs, are sorted, and use `[]` when empty; exits uses `{}` when
+empty. Players includes the requester. Dead enemies and held/reserved/consumed
+items are omitted. LOOK DETAILS replaces the item/NPC arrays with descriptors:
 
 ```json
-{
-  "player": "alice",
-  "hp": 85,
-  "max_hp": 100,
-  "state": "EN_COMBAT",
-  "combat": {
-    "target_id": "npc.bandit_leader",
-    "target_name": "Bandit Leader",
-    "target_hp": 48,
-    "target_max_hp": 80
-  }
-}
+{"items":[{"id":"item.fountain","name":"Old Fountain","obtainable":false}],"npcs":[{"id":"npc.guard","name":"Village Guard","role":"dialogue"}]}
 ```
-`player` is a username; `hp` and `max_hp` are integers. Outside combat, `"combat":null` and `"state":"HORS_COMBAT"`. In combat, `"state":"EN_COMBAT"` and `combat` has the four fields shown above. Combat mechanics and any additional states need a separate team decision.
 
----
+The room and players fields remain identical in that extension.
 
-## 3. `WHO` Payload
-
-Sent in response to `WHO`.
-
-### Existing schema `🟢 VALIDATED`
+## INVENTORY
 
 ```json
-{
-  "room": ["alice", "bob"],
-  "server": 6
-}
+["item.apple","item.rusty_sword"]
 ```
 
----
+INVENTORY DETAILS returns `[{"id":"item.apple","name":"Fresh Apple"}]`.
+Both return `[]` for an empty inventory.
 
-## 4. `INVENTORY` Payload
-
-Sent in response to `INVENTORY`.
-
-### Proposed schema `🟢 VALIDATED (Both Dev A & Dev B)`
+## STATUS
 
 ```json
-[
-  {"id": "item.rusty_sword", "name": "Rusty Sword"},
-  {"id": "item.rare_herbs", "name": "Rare Herbs"}
-]
+{"status":"combat","player":"alice","hp":80,"max_hp":100,"state":"EN_COMBAT","combat":{"target_id":"npc.bandit_leader","target_name":"Bandit Leader","target_hp":48,"target_max_hp":70}}
 ```
 
-The response is an array of `{id:string,name:string}`. An empty inventory is `OK []`. The GUI displays `name` and sends `id` for `DROP`. Item-specific attributes such as damage bonus belong to the item model and can be added through an agreed schema revision.
+Required base fields: hp, max_hp, status. Status is `healthy` at full HP,
+`injured` below full HP outside combat, or `combat` during an engagement.
+Additional fields retain GUI details. Outside combat, state is HORS_COMBAT and
+combat is null.
 
----
-
-## 5. `QUESTS` & `QUEST <id>` Payloads
-
-### `QUESTS` (List of Quests) `🔵 IN_REVIEW`
+## ATTACK / DEFEND / FLEE
 
 ```json
-[
-  {
-    "id": "quest.herbal_cure",
-    "title": "The Apothecary's Remedy",
-    "status": "IN_PROGRESS"
-  },
-  {
-    "id": "quest.bandit_bounty",
-    "title": "Bounty on the Cutthroat",
-    "status": "NOT_STARTED"
-  }
-]
+{"attacker_hp":80,"status":"combat","player":"alice","target":"npc.bandit_leader","damage":22,"counter_damage":20,"player_hp":80,"target_hp":48,"outcome":"ongoing","room":"loc.ruins_den"}
 ```
 
-### `QUEST <id>` (Quest Details) `🔵 IN_REVIEW`
+RFC example fields attacker_hp, target_hp, damage and status are present.
+Project details include counter_damage, target ID, room and outcome. Damage
+values are applied amounts bounded by remaining HP. attacker_hp and player_hp
+are equal and reflect post-respawn HP where applicable. status is combat while
+engaged; terminal values are victory, respawn or fled. outcome additionally
+supports ongoing, defended and flee_failed. EVT ROOM COMBAT uses the same JSON.
+
+## QUEST <npc>
 
 ```json
-{
-  "id": "quest.herbal_cure",
-  "title": "The Apothecary's Remedy",
-  "giver": "npc.herbalist",
-  "description": "Collect rare herbs from the abandoned garden and bring them back to the herbalist.",
-  "status": "IN_PROGRESS",
-  "objective": {
-    "type": "FETCH",
-    "target_item": "item.rare_herbs",
-    "completed": false
-  },
-  "reward": "Vigor Potion (+100 HP)"
-}
+{"quest_id":"quest.herbal_cure","description":"Bring rare herbs to the herbalist.","reward":"item.vigor_potion","status":"available"}
 ```
 
----
+The giver must be present. A successful first request accepts the quest;
+repeated requests return active. Reward is a canonical item ID.
 
-## 6. `TALK <npc_id>` Payload
-
-Sent in response to `TALK`.
-
-### Existing schema `🟢 VALIDATED`
+## QUESTS
 
 ```json
-{
-  "npc": "npc.guard",
-  "dialogue": "Stay safe, traveler. The ruins to the east are full of cutthroats."
-}
+[{"quest_id":"quest.herbal_cure","status":"active","progress":"1/1"},{"quest_id":"quest.bandit_bounty","status":"completed"}]
 ```
 
-The `npc` value is the stable NPC ID; `dialogue` is UTF-8 text encoded as a JSON string.
+Only started or completed quests are listed, sorted by quest_id. Empty result:
+`[]`. Active progress is 0/1 or 1/1: ownership proves delivery objectives and a
+recorded final blow proves defeat objectives. Completed entries omit progress.
+The extension status unavailable means another player claimed the unique reward
+of a quest this player had already accepted.
 
----
+QUESTS DETAILS exposes all definitions as `{id,title,status}` with internal
+states NOT_STARTED, IN_PROGRESS, OBJECTIVES_MET, COMPLETED, UNAVAILABLE.
+QUESTINFO <quest_id> is a read-only extension:
 
-## 7. Compatibility note
+```json
+{"id":"quest.herbal_cure","title":"The Apothecary's Remedy","giver":"npc.herbalist","description":"Bring rare herbs.","status":"IN_PROGRESS","objective":{"type":"FETCH","target_item":"item.rare_herbs","target_npc":"npc.herbalist","completed":false},"reward":"Vigor Potion"}
+```
 
-The subject's example exchanges show arrays of item IDs for `LOOK` and `INVENTORY`. This proposal uses descriptor objects so the GUI can show names without a local copy of world data. Confirm that the attached RFC permits these shapes. If it does not, update both clients and this document to match the RFC, and record any approved deviation in the root README.
+DEFEAT objectives use target_npc for the enemy and omit target_item.
+
+## Non-JSON standard replies
+
+WHO returns `OK players=2`. TALK returns `OK <dialogue text>` with ordered world
+lines joined by spaces. QUIT returns `OK bye` then closes the connection.
+
+WHO DETAILS returns `{"room":["alice"],"server":2}`.
+TALKJSON returns `{"npc":"npc.guard","dialogue":"First line.\nSecond line."}`.
+Both TALK formats share acceptance/delivery logic and private replies; ITEM
+DELIVER/REWARD events follow successful completion. Full inventory blocks a
+reward requiring an extra slot; delivery replacing one ingredient with one
+reward remains possible at the inventory limit.

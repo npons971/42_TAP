@@ -15,10 +15,21 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":4242", "TCP listen address")
-	worldPath := flag.String("world", "data/world.json", "JSON world file")
+	worldPath := flag.String("world", "data/world.json", "JSON world file (default: full nine-room world)")
+	logPath := flag.String("log-file", "", "append structured JSON logs to a file (default: stdout)")
 	flag.Parse()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logOutput := os.Stdout
+	if *logPath != "" {
+		file, err := os.OpenFile(*logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			slog.Error("open log file failed", "error", err)
+			os.Exit(1)
+		}
+		defer file.Close()
+		logOutput = file
+	}
+	logger := slog.New(slog.NewJSONHandler(logOutput, nil))
 	world, err := server.LoadWorld(*worldPath)
 	if err != nil {
 		logger.Error("world load failed", "path", *worldPath, "error", err)

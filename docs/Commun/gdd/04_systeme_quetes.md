@@ -1,83 +1,70 @@
-# 04 — Système de Quêtes
+# 04 — Quêtes implémentées
 
-Le sujet impose la présence d'au moins **2 quêtes distinctes** (par exemple : collecte d'objet, livraison, élimination d'un ennemi) avec un système de progression, de validation et de récompenses conçu par le groupe.
+## Progression
 
----
+Les définitions de `data/world.json` sont chargées et validées avant l'écoute
+TCP : donneurs, cibles, récompenses réservées, types, titre et description.
+Un donneur n'a qu'une quête afin que TALK ait une interprétation unique.
 
-## 1. Machine à États d'une Quête
+QUEST <pnj> auprès du donneur commence la quête. TALK conserve aussi cette
+acceptation ; si l’objectif est déjà rempli, TALK peut terminer immédiatement
+la quête. QUESTS et QUESTINFO sont des lectures sans effet.
+Les statuts internes exposés par QUESTINFO et QUESTS DETAILS sont :
 
-Chaque quête suit un cycle de vie bien défini pour chaque joueur :
+| Statut | Signification |
+|---|---|
+| NOT_STARTED | Pas encore de dialogue avec le donneur |
+| IN_PROGRESS | Quête acceptée, objectif non rempli |
+| OBJECTIVES_MET | Objet actuellement possédé ou victoire enregistrée |
+| COMPLETED | Récompense attribuée à ce pseudo |
+| UNAVAILABLE | Récompense unique déjà attribuée à un autre pseudo |
 
-```mermaid
-stateDiagram-v2
-    [*] --> NON_COMMENCEE
-    NON_COMMENCEE --> EN_COURS : Dialogue PNJ ou Commande
-    EN_COURS --> OBJECTIFS_ATTEINTS : Conditions réunies (Inventaire / Combat)
-    OBJECTIFS_ATTEINTS --> COMPLETEE : Validation auprès du PNJ
-    COMPLETEE --> [*]
-```
+QUESTS liste les quêtes acceptées/terminées par quest_id croissant, avec
+status active/completed et progress 0/1 ou 1/1 pour une quête active. Une quête
+acceptée dont la récompense est attribuée à un autre joueur devient unavailable.
+QUESTS DETAILS liste aussi les définitions non commencées.
+Le suivi est conservé par pseudo pendant la vie du serveur et survit à une
+reconnexion. Il n'y a pas de stockage disque ni de mot de passe : un pseudo
+n'est pas une identité sécurisée ; ce choix correspond au protocole CONNECT.
 
-### États
-- `NON_COMMENCEE` : Quête disponible dans le monde auprès d'un donneur de quête.
-- `EN_COURS` : Le joueur a accepté la quête. Le serveur suit ses actions (objets ramassés, ennemis battus).
-- `OBJECTIFS_ATTEINTS` : Les conditions techniques sont remplies mais la quête doit être clôturée.
-- `COMPLETEE` : Clôture définitive, récompense accordée, quête non rejouable.
+## quest.herbal_cure — The Apothecary's Remedy
 
----
+1. TALK npc.herbalist dans loc.garden accepte la quête.
+2. TAKE item.rare_herbs permet OBJECTIVES_MET.
+3. TALK npc.herbalist consomme les herbes, attribue item.vigor_potion et soigne
+   jusqu'à 100 PV. Si les herbes sont déjà possédées au premier TALK, la
+   livraison réussit immédiatement.
 
-## 2. Commandes Protocolaire Liées aux Quêtes
+Un DROP ou une déconnexion avant livraison fait revenir l'objectif à
+IN_PROGRESS tant que l'objet n'est plus dans l'inventaire du joueur.
 
-- `QUESTS` : Renvoie la liste des quêtes connues du joueur ainsi que leur statut actuel (`NON_COMMENCEE`, `EN_COURS`, `COMPLETEE`).
-- `QUEST <quest_id>` : Affiche la description détaillée de la quête demandée, l'objectif en cours et le commanditaire.
+## quest.bandit_bounty — Bounty on the Cutthroat
 
----
+1. TALK npc.guard_captain dans loc.ruins_gate accepte la quête.
+2. ATTACK npc.bandit_leader dans loc.ruins_den jusqu'à sa défaite enregistre
+   la victoire pour le joueur ayant porté le coup final.
+3. TALK npc.guard_captain attribue item.ancient_key, une seule fois.
 
-## 3. Typologie des Objectifs Pris en Charge
+Une victoire obtenue avant l'acceptation reste valide. Une fuite, la défaite
+du joueur ou la victoire d'un autre joueur ne constitue pas une preuve.
+La preuve de victoire survit à la reconnexion du même pseudo.
 
-Le moteur de quêtes gère 3 catégories d'objectifs :
+## Unicité et validation atomique
 
-1. **FETCH (Collecte)** : Posséder un item spécifique dans l'inventaire (ex: `item.old_key`).
-2. **DELIVER (Livraison)** : Donner un item requis à un PNJ cible via une interaction (`TALK <npc>`).
-3. **DEFEAT (Élimination)** : Vaincre un PNJ hostile spécifique (ex: `npc.bandit_chief`).
+Les ennemis, les herbes et les récompenses sont uniques dans ce monde partagé.
+Les objets consommés et les ennemis vaincus ne réapparaissent pas avant
+redémarrage. Seul le premier joueur remplissant l'objectif reçoit la récompense.
+Les objets non consommés restent partageables via DROP/TAKE ; il n'existe
+aucune copie personnelle de l'ennemi, de l'ingrédient ou de la récompense.
 
----
+La disponibilité, la possession/victoire, la taille de la réponse et la file
+de sortie sont contrôlées avant mutation. La consommation, le transfert, le
+soin et l'attribution globale sont ensuite validés sous le même verrou.
+Répéter TALK avec le pseudo gagnant renvoie un dialogue de quête déjà terminée ;
+un autre joueur reçoit ERR 406 NO_QUEST_AVAILABLE. Déposer ou consommer une récompense
+ne réinitialise pas son attribution.
 
-## 4. Fiches Détaillées des Deux Quêtes Obligatoires
-
-### Quête 1 : « Le Remède de l'Apothicaire » (Type : Fetch & Deliver)
-
-- **ID Technique** : `quest.herbal_cure`
-- **Donneur de quête** : L'Herboriste (salle : `loc.herbalist_shop`)
-- **Pitch narratif** : L'herboriste a besoin d'herbes médicinales rares qui ne poussent que dans le jardin abandonné derrière le manoir.
-- **Étapes** :
-  1. Parler à l'Herboriste (`TALK herbalist`) pour enclencher la quête.
-  2. Trouver et ramasser les herbes rares (`TAKE rare_herbs` dans `loc.overgrown_garden`).
-  3. Retourner voir l'Herboriste et lui parler (`TALK herbalist`).
-- **Validation** : Le serveur vérifie que le joueur possède `item.rare_herbs` dans son inventaire lors de l'interaction. L'item est consommé.
-- **Récompense** :
-  - Restauration complète des PV (100 HP).
-  - Remise d'un objet unique : une Fiole de Vigueur (`item.vigor_potion`).
-
----
-
-### Quête 2 : « La Chasse au Coupe-Gorge » (Type : Defeat & Report)
-
-- **ID Technique** : `quest.bandit_bounty`
-- **Donneur de quête** : Le Capitaine de la Garde (salle : `loc.town_gate`)
-- **Pitch narratif** : Un bandit de grand chemin s'est retranché dans les ruines et détrousse les marchands. Le capitaine offre une prime pour son élimination.
-- **Étapes** :
-  1. Parler au Capitaine de la Garde (`TALK guard_captain`) pour accepter la prime.
-  2. Se rendre dans les ruines (`loc.ruins_den`) et engager le combat contre le chef bandit (`ATTACK bandit_leader`).
-  3. Vaincre le chef bandit au combat au tour par tour.
-  4. Retourner faire son rapport au Capitaine (`TALK guard_captain`).
-- **Validation** : Le serveur enregistre la victoire contre `npc.bandit_leader` dans l'état de quête du joueur.
-- **Récompense** :
-  - Déblocage de l'accès à une issue secrète ou remise d'une Clé Ancienne (`item.ancient_key`) ouvrant la crypte du donjon.
-
----
-
-## 5. Gestion des Cas Particuliers & Triche
-
-- **Perte de l'objet de quête** : Si un joueur jette (`DROP`) l'objet de quête avant validation, le statut repasse automatiquement à l'étape précédente.
-- **Concurrence multijoueur sur les items de quête** : Comme les objets sont uniques dans le monde, si un joueur A possède les herbes, le joueur B doit attendre qu'il les rende ou que le monde se réinitialise.
-- **Quête déjà terminée** : Réponse informative du PNJ confirmant que la mission est déjà accomplie pour ce joueur.
+La réponse TALK est du texte sur une ligne ; TALKJSON conserve npc/dialogue. Après la réponse, une livraison
+diffuse ITEM DELIVER puis ITEM REWARD ; un rapport de victoire diffuse seulement
+ITEM REWARD. Les changements sont journalisés ; QUESTS/QUESTINFO exposent les états
+courants sans ajouter d'événement privé ambigu aux réponses.

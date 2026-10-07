@@ -1,109 +1,32 @@
-# Server Architecture & Design Choices
+# Server architecture — implemented
 
-> **Document Status**: `🔴 TO_FILL (Architecture Decisions to Finalize)`  
-> **Assigned to**: Aris (Dev A)  
-> **Last Updated**: 2026-10-07
+The Go module is rooted at the repository. `cmd/server` loads and validates
+`data/world.json`, configures JSON logging, opens TCP and handles SIGINT/SIGTERM.
+All SDK/cache paths are local to the repository through Makefile targets.
 
-The 42 subject requires the team to document and justify server design choices (specifically *dispatcher/router vs inline handling*, *state management*, and *world loader integrity*). This document defines the architectural blueprint.
+`internal/server.Server` owns immutable world definitions and mutable runtime
+maps: clients, connected usernames, item positions, NPC HP/engagements, groups,
+quest progress by username and global unique reward claims.
 
----
+Each connection has a reading goroutine and a dedicated writing goroutine.
+The writer consumes a bounded channel and uses a five-second write deadline.
+The reader frames LF lines, validates UTF-8/length, applies the command limiter,
+logs the command and dispatches to typed handlers. A switch is used because
+the command set is small and it keeps argument conventions explicit. TAKE,
+DROP, TALK, ATTACK, QUEST and USE retain the complete rest of the line for display names.
+Fixed-argument commands reject empty tokens and tabs.
 
-## 1. High-Level Layered Architecture
+A single RWMutex protects mutable state. LOOK/WHO/STATUS/INVENTORY/QUESTINFO/QUESTS
+read it; all mutations and target/ownership checks use its write lock. Every
+transaction validates and queues its success reply before changing gameplay
+state. Broadcasts enqueue, never write sockets, while the lock is held.
 
-```text
-+-------------------------------------------------------------+
-|                        NETWORK LAYER                        |
-|  - TCP Listener (port 4242)                                 |
-|  - Client Connection Manager (goroutine per socket)        |
-+------------------------------+------------------------------+
-                               | raw line string
-                               v
-+-------------------------------------------------------------+
-|                       PROTOCOL LAYER                        |
-|  - Command Parser (tokens, ABNF validation)                 |
-|  - Command Router / Dispatcher                              |
-|  - JSON Serialization / Response Formatter                  |
-+------------------------------+------------------------------+
-                               | typed command struct
-                               v
-+-------------------------------------------------------------+
-|                      GAME ENGINE LAYER                      |
-|  - GameState (Source of Truth)                              |
-|  - Player & Room managers                                   |
-|  - Turn-based Combat Engine                                 |
-|  - Quest Progression Engine                                 |
-|  - Broadcaster (Non-blocking EVT distributor)               |
-+------------------------------+------------------------------+
-                               ^
-                               | loads static data on boot
-+------------------------------+------------------------------+
-|                     WORLD LOADER / DATA                     |
-|  - YAML/JSON parser & integrity validator                   |
-+-------------------------------------------------------------+
-```
+Disconnect removes the player, releases the enemy and group membership, drops
+only owned items, broadcasts departure, closes the channel, waits for the writer
+and closes TCP. Groups disappear when their last member leaves. NPC deaths,
+consumed objects, quest proofs and reward claims remain until server restart;
+quest progress survives reconnect by username. There is no disk persistence.
 
----
-
-## 2. Command Handling Pattern `🔴 TO_FILL`
-
-### Architectural Alternatives
-
-* **Option A: Router / Command Dispatcher (Recommended)**
-  * A central map/table mapping verbs to handler functions:
-    ```go
-    type CommandHandler func(ctx *Context, args []string) error
-    var routes = map[string]CommandHandler{
-        "CONNECT": handleConnect,
-        "LOOK":    handleLook,
-        "MOVE":    handleMove,
-        // ...
-    }
-    ```
-  * *Pros*: High maintainability, clean separation of concerns, easy unit testing of isolated handlers, simple to add new commands during peer-evaluation.
-  * *Cons*: Slight abstraction overhead.
-
-* **Option B: Inline Switch-Case Handling**
-  * Single central loop evaluating command verbs through a monolithic `switch cmd { case "CONNECT": ... }`.
-  * *Pros*: Direct code flow, no function pointer indirection.
-  * *Cons*: Quickly becomes a giant file prone to merge conflicts; harder to isolate for testing.
-
-> **Decision**: `🔴 TO_FILL` — Record final choice and justification for the README here.
-
----
-
-## 3. GameState: Central Source of Truth
-
-The server maintains the authoritative in-memory state. Neither CLI nor GUI holds independent game truth.
-
-```go
-type GameState struct {
-    mu       sync.RWMutex
-    Players  map[string]*Player
-    Rooms    map[string]*Room
-    Items    map[string]*Item
-    NPCs     map[string]*NPC
-    Quests   map[string]*Quest
-    Broadcaster *Broadcaster
-}
-```
-
-### Domain Models
-- **`Player`**: Username, Connection pointer, Current Room ID, HP (base 100), Inventory (`[]*Item`), Active Quests, Combat Status (`InCombat`, `TargetID`).
-- **`Room`**: ID, Name, Description, Exits (`map[string]string`), Items (`[]*Item`), NPCs (`[]*NPC`), Players present (`map[string]*Player`).
-- **`Item`**: ID, Display Name, Description, Obtainable boolean.
-- **`NPC`**: ID, Display Name, Role (`dialogue`, `quest_giver`, `enemy`), HP, Attack power, Dialogues.
-- **`Quest`**: ID, Title, Steps, Target Item/NPC, Reward.
-
----
-
-## 4. Static World Loader & Validation `🔵 IN_REVIEW`
-
-On startup, the server loads static world definitions from `world.yaml` or `world.json`:
-1. **Parsing**: Deserializes raw file into intermediate Go structs.
-2. **Integrity Checks (Mandatory Validation)**:
-   - Check that all room exit targets point to existing room IDs.
-   - Check that referenced item IDs in rooms exist in the items catalogue.
-   - Check that referenced NPC IDs in rooms exist in the NPC catalogue.
-   - Verify that all quests reference valid NPCs and valid items.
-   - Validate world topological invariants (at least 8 rooms, presence of a loop, presence of an optional branch).
-3. If any reference is broken, the server logs a fatal error with precise location and exits immediately.
+World loading validates IDs, initial placements, exits, roles, NPC health,
+healing, quest title/description, givers, target items/enemies and unique reserved
+rewards. The original YAML is a design snapshot; JSON is the runtime source.

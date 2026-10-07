@@ -1,101 +1,356 @@
 {
   "world": {
+    "metadata": {
+      "name": "The Answer Protocol Realm",
+      "version": "1.0.0"
+    },
     "start": "loc.town_square",
-    "items": [
-      {"id": "item.apple", "name": "Pomme fraîche", "obtainable": true},
-      {"id": "item.fountain", "name": "Fontaine de pierre", "obtainable": false},
-      {"id": "item.ale", "name": "Chope de bière", "obtainable": true},
-      {"id": "item.rusty_sword", "name": "Épée rouillée", "obtainable": true},
-      {"id": "item.torch", "name": "Torche en bois", "obtainable": true},
-      {"id": "item.wooden_shield", "name": "Bouclier en bois", "obtainable": true},
-      {"id": "item.rare_herbs", "name": "Herbes médicinales rares", "obtainable": true},
-      {"id": "item.mystery_chest", "name": "Coffre en fer renforcé", "obtainable": false},
-      {"id": "item.ancient_key", "name": "Clé ancienne", "obtainable": true},
-      {"id": "item.vigor_potion", "name": "Potion de vigueur", "obtainable": true}
-    ],
+    "respawn": "loc.town_square",
     "locations": {
       "loc.town_square": {
-        "name": "Place du Village",
-        "description": "Une place pavée baignée d'une douce lumière. Au centre se dresse une fontaine de pierre où coule une eau claire. Les aventuriers s'y rassemblent.",
+        "name": "Village Square",
+        "description": "A bustling cobblestone square bathed in gentle sunlight. In the center stands a weathered stone fountain where fresh water trickles steadily. Adventurers frequently gather here before setting out.",
         "exits": {
-          "north": "loc.garden",
           "east": "loc.market",
+          "north": "loc.garden",
           "west": "loc.dark_alley"
         },
-        "items": ["item.apple", "item.fountain"]
+        "items": [
+          "item.fountain"
+        ],
+        "npcs": [
+          "npc.guard"
+        ]
       },
       "loc.market": {
-        "name": "Marché Central",
-        "description": "Une allée animée bordée d'étals colorés et de sacs d'épices. L'odeur du pain chaud et des fruits mûrs embaume l'air.",
+        "name": "Central Market",
+        "description": "A vibrant market street lined with colorful merchant stalls, fragrant spice sacks, and stacks of handcrafted goods. The scent of baked bread and ripe fruits fills the air.",
         "exits": {
           "west": "loc.town_square",
           "north": "loc.tavern",
           "east": "loc.ruins_gate"
         },
-        "items": []
+        "items": [
+          "item.apple"
+        ],
+        "npcs": [
+          "npc.merchant"
+        ]
       },
       "loc.tavern": {
-        "name": "Taverne du Dragon Endormi",
-        "description": "Une auberge chaleureuse éclairée par un grand feu de cheminée. Une trappe en bois massif mène à la cave.",
+        "name": "The Slumbering Dragon Tavern",
+        "description": "A warm and lively tavern illuminated by a roaring hearth fire. Sturdy oak tables are scattered across creaking floorboards, and a heavy wooden trapdoor leads down into the cellar.",
         "exits": {
           "south": "loc.market",
           "west": "loc.dark_alley",
           "down": "loc.cellar"
         },
-        "items": ["item.ale"]
+        "items": [
+          "item.ale"
+        ],
+        "npcs": [
+          "npc.innkeeper"
+        ]
       },
       "loc.dark_alley": {
-        "name": "Ruelle Sombre",
-        "description": "Un passage étroit et ténébreux entre de hauts murs de briques. Une grille d'égout rouillée baille dans le coin.",
+        "name": "Dark Alley",
+        "description": "A narrow, shadow-drenched alleyway wedged between imposing brick buildings. The damp cobblestones are slippery, and a rusty iron sewer grating lies open in the corner.",
         "exits": {
           "south": "loc.town_square",
           "east": "loc.tavern",
           "down": "loc.sewers"
         },
-        "items": []
+        "items": [
+          "item.rusty_sword"
+        ],
+        "npcs": [
+          "npc.thief"
+        ]
       },
       "loc.cellar": {
-        "name": "Cave de la Taverne",
-        "description": "Une cave fraîche aux voûtes basses, encombrée de tonneaux de vin et de toiles d'araignées. Un passage discret s'enfonce vers le sud.",
+        "name": "Tavern Cellar",
+        "description": "A cool, dimly lit cellar lined with towering vintage wine barrels and dusty racks. Cobwebs hang thick from the wooden ceiling beams, and a secret arched passage extends to the south.",
         "exits": {
           "up": "loc.tavern",
           "south": "loc.sewers"
         },
-        "items": ["item.torch", "item.vigor_potion"]
+        "items": [
+          "item.torch"
+        ],
+        "npcs": []
       },
       "loc.sewers": {
-        "name": "Égouts Humides",
-        "description": "Un réseau souterrain résonnant où s'écoulent des eaux sombres le long d'étroites passerelles de pierre glissante.",
+        "name": "Damp Sewers",
+        "description": "An echoing subterranean channel of sluggish murky water with slippery stone walkways on either side. Faint scuttling sounds echo through the darkness.",
         "exits": {
           "north": "loc.cellar",
           "up": "loc.dark_alley"
         },
-        "items": ["item.rare_herbs"]
+        "items": [],
+        "npcs": [
+          "npc.giant_rat"
+        ]
       },
       "loc.ruins_gate": {
-        "name": "Porte des Ruines",
-        "description": "Une imposante arche de pierre effondrée marquant l'entrée de fortifications oubliées. Le vent souffle froidement depuis les montagnes.",
+        "name": "Ruins Gate",
+        "description": "A crumbling stone archway standing at the threshold of ancient forgotten fortifications. Overgrown thorn bushes wrap tightly around cracked masonry, and cold mountain winds whistle through the breach.",
         "exits": {
           "west": "loc.market",
           "north": "loc.ruins_den"
         },
-        "items": ["item.wooden_shield"]
+        "items": [
+          "item.wooden_shield"
+        ],
+        "npcs": [
+          "npc.guard_captain"
+        ]
       },
       "loc.ruins_den": {
-        "name": "Repaire des Coupe-gorges",
-        "description": "Un bastion souterrain fortifié établi sous une voûte fracturée. Des caisses pillées entourent un feu de camp menaçant.",
+        "name": "Cutthroat's Den",
+        "description": "A fortified hideout established beneath the fractured vault of an ancient bastion. Stolen crates and plundered supplies surround a smoldering campfire. An air of imminent danger hangs heavy.",
         "exits": {
           "south": "loc.ruins_gate"
         },
-        "items": ["item.mystery_chest"]
+        "items": [
+          "item.mystery_chest"
+        ],
+        "npcs": [
+          "npc.bandit_leader"
+        ]
       },
       "loc.garden": {
-        "name": "Jardin Abandonné",
-        "description": "Une clairière paisible où la nature a repris ses droits. Des plantes médicinales et des herbes rares poussent à l'ombre de saules pleureurs.",
+        "name": "Overgrown Garden",
+        "description": "A peaceful, secluded enclave of wild greenery where nature has reclaimed old garden beds. Rare medicinal plants and flowering shrubs thrive under the canopy of weeping willows.",
         "exits": {
           "south": "loc.town_square"
         },
-        "items": ["item.rusty_sword", "item.ancient_key"]
+        "items": [
+          "item.rare_herbs"
+        ],
+        "npcs": [
+          "npc.herbalist"
+        ]
+      }
+    },
+    "items": [
+      {
+        "id": "item.apple",
+        "name": "Fresh Apple",
+        "description": "A crisp, sweet red apple. Looks delicious and restores 10 HP when consumed.",
+        "obtainable": true,
+        "type": "consumable",
+        "heal_value": 10
+      },
+      {
+        "id": "item.ale",
+        "name": "Frothy Ale",
+        "description": "A tall wooden mug filled with foamy, refreshing tavern ale. Restores 15 HP.",
+        "obtainable": true,
+        "type": "consumable",
+        "heal_value": 15
+      },
+      {
+        "id": "item.rusty_sword",
+        "name": "Rusty Sword",
+        "description": "An old iron blade with a weathered leather hilt. Though notched and rusted, it grants +10 attack damage.",
+        "obtainable": true,
+        "type": "weapon",
+        "damage_bonus": 10
+      },
+      {
+        "id": "item.torch",
+        "name": "Wooden Torch",
+        "description": "A pitch-soaked wooden torch wrapped in heavy burlap. Provides warmth and illumination in dark chambers.",
+        "obtainable": true,
+        "type": "tool"
+      },
+      {
+        "id": "item.wooden_shield",
+        "name": "Battered Shield",
+        "description": "A sturdy wooden round shield reinforced with iron bands. Increases defense by 5.",
+        "obtainable": true,
+        "type": "armor",
+        "defense_bonus": 5
+      },
+      {
+        "id": "item.rare_herbs",
+        "name": "Rare Herbs",
+        "description": "A fragrant bundle of silver-veined leaves sought by healers for their potent restorative properties.",
+        "obtainable": true,
+        "type": "quest"
+      },
+      {
+        "id": "item.mystery_chest",
+        "name": "Heavy Iron Chest",
+        "description": "A massive reinforced chest bound with rusted iron bands. It is anchored to the stone floor and cannot be picked up.",
+        "obtainable": false,
+        "type": "scenery"
+      },
+      {
+        "id": "item.fountain",
+        "name": "Stone Fountain",
+        "description": "An ornate carved fountain pouring crystal-clear spring water. It is a permanent architectural monument.",
+        "obtainable": false,
+        "type": "scenery"
+      },
+      {
+        "id": "item.ancient_key",
+        "name": "Ancient Key",
+        "description": "An intricate brass key engraved with arcane runes, awarded for defeating the bandit leader.",
+        "obtainable": true,
+        "type": "quest_reward",
+        "initial_location": {
+          "kind": "reserve"
+        }
+      },
+      {
+        "id": "item.vigor_potion",
+        "name": "Vigor Potion",
+        "description": "A glowing emerald flask brewed by the village herbalist. Restores health to maximum.",
+        "obtainable": true,
+        "type": "consumable",
+        "heal_value": 100,
+        "initial_location": {
+          "kind": "reserve"
+        }
+      }
+    ],
+    "npcs": [
+      {
+        "id": "npc.guard",
+        "name": "Village Guard",
+        "role": "dialogue",
+        "description": "A vigilant town guard clad in chainmail, keeping watch over the square.",
+        "hp": 50,
+        "max_hp": 50,
+        "attack_power": 12,
+        "hostile": false,
+        "dialogue": [
+          "Stay on your guard, traveler. The outer ruins have grown lawless.",
+          "The herbalist in the northern garden might need help gathering supplies.",
+          "Don't cause any trouble within the village gates."
+        ]
+      },
+      {
+        "id": "npc.innkeeper",
+        "name": "Jovial Innkeeper",
+        "role": "dialogue",
+        "description": "A plump, cheerful man vigorously wiping down the wooden tavern bar with a clean rag.",
+        "hp": 30,
+        "max_hp": 30,
+        "attack_power": 5,
+        "hostile": false,
+        "dialogue": [
+          "Welcome to The Slumbering Dragon! Pull up a chair and rest your boots.",
+          "Careful if you head down to the cellar—the old sewer connection isn't sealed.",
+          "Nothing warms the soul like a pint of frothy ale."
+        ]
+      },
+      {
+        "id": "npc.merchant",
+        "name": "Traveling Merchant",
+        "role": "dialogue",
+        "description": "A well-traveled merchant displaying wares from distant provinces.",
+        "hp": 35,
+        "max_hp": 35,
+        "attack_power": 6,
+        "hostile": false,
+        "dialogue": [
+          "Looking for fresh produce or sturdy traveling supplies?",
+          "Bandits out by the eastern gates have disrupted my trade caravans.",
+          "Take an apple for the road, traveler."
+        ]
+      },
+      {
+        "id": "npc.thief",
+        "name": "Shady Cutpurse",
+        "role": "dialogue",
+        "description": "A cloaked figure lurking in the shadows, fingering a rusted dagger.",
+        "hp": 30,
+        "max_hp": 30,
+        "attack_power": 8,
+        "hostile": false,
+        "dialogue": [
+          "Keep moving, stranger. Nothing to see here.",
+          "Watch your coin pouch in dark alleys like this one."
+        ]
+      },
+      {
+        "id": "npc.herbalist",
+        "name": "Village Herbalist",
+        "role": "quest_giver",
+        "description": "A knowledgeable apothecary tending to fragrant herbs with gentle care.",
+        "hp": 25,
+        "max_hp": 25,
+        "attack_power": 2,
+        "hostile": false,
+        "dialogue": [
+          "Greetings, traveler. I am preparing remedies for the injured guards, but my stock of rare herbs is depleted.",
+          "The overgrown garden behind the square holds rare medicinal herbs. Could you bring some to me?"
+        ]
+      },
+      {
+        "id": "npc.guard_captain",
+        "name": "Guard Captain",
+        "role": "quest_giver",
+        "description": "A battle-hardened officer standing guard before the gate leading to the ancient ruins.",
+        "hp": 75,
+        "max_hp": 75,
+        "attack_power": 18,
+        "hostile": false,
+        "dialogue": [
+          "Halt! Beyond these gates lies the bandit hideout in the old ruins.",
+          "A sizable bounty awaits any brave adventurer who eliminates the Bandit Leader."
+        ]
+      },
+      {
+        "id": "npc.giant_rat",
+        "name": "Giant Sewer Rat",
+        "role": "enemy",
+        "description": "A foul, bloated rodent with sharp yellow incisors and glistening red eyes.",
+        "hp": 20,
+        "max_hp": 20,
+        "attack_power": 6,
+        "hostile": true,
+        "dialogue": [
+          "The giant rat hisses aggressively, baring sharp yellow teeth!"
+        ]
+      },
+      {
+        "id": "npc.bandit_leader",
+        "name": "Bandit Leader",
+        "role": "enemy",
+        "description": "A scar-faced cutthroat armed with twin notched scimitars, ruling the ruins.",
+        "hp": 70,
+        "max_hp": 70,
+        "attack_power": 20,
+        "hostile": true,
+        "dialogue": [
+          "You dare infiltrate my hideout? You won't leave these ruins alive!"
+        ]
+      }
+    ],
+    "quests": {
+      "quest.herbal_cure": {
+        "title": "The Apothecary's Remedy",
+        "giver": "npc.herbalist",
+        "description": "Collect rare medicinal herbs from the overgrown garden and deliver them to the village herbalist.",
+        "type": "fetch_and_deliver",
+        "target_item": "item.rare_herbs",
+        "target_npc": "npc.herbalist",
+        "reward_item": "item.vigor_potion",
+        "reward_hp_heal": 100,
+        "completion_dialogue": "You found them! These will save many lives. Please take this Vigor Potion as a token of my gratitude."
+      },
+      "quest.bandit_bounty": {
+        "title": "Bounty on the Cutthroat",
+        "giver": "npc.guard_captain",
+        "description": "Venture into the ancient ruins and defeat the notorious Bandit Leader threatening the region.",
+        "type": "defeat_and_report",
+        "target_npc_defeat": "npc.bandit_leader",
+        "target_npc_report": "npc.guard_captain",
+        "reward_item": "item.ancient_key",
+        "completion_dialogue": "Outstanding work! The roads are safe once again. Here is the Ancient Key to the stronghold crypt."
       }
     }
   }

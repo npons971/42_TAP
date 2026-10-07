@@ -1,61 +1,43 @@
-# CLI Client Specifications
+# CLI client — implemented
 
-> **Document Status**: `🔵 IN_REVIEW`  
-> **Assigned to**: Aris (Dev A)  
-> **Last Updated**: 2026-10-07
+The client lives in `cmd/client-cli` and `internal/cli`. It uses the Go standard
+library and accepts **direct protocol syntax**. This keeps commands identical
+between the terminal, the GUI backend and peer clients, without guessing IDs
+from short names. Full display names remain supported by the server.
 
-The CLI client provides a lightweight, retro terminal interface to the TAP server. Both clients must be interchangeable and remain responsive to asynchronous incoming events while waiting for keyboard input.
-
----
-
-## 1. Asynchronous I/O Architecture
-
-To prevent terminal input from blocking incoming event display, the CLI client runs two concurrent goroutines:
-
-```text
-                  +---------------------------+
-                  |         TERMINAL          |
-                  +-------------+-------------+
-                                |
-             +------------------+------------------+
-             |                                     |
-             v                                     v
-   [Goroutine 1 : User Input]             [Goroutine 2 : Socket Listener]
-    - Reads line from os.Stdin            - Reads line from net.Conn
-    - Formats/validates command           - Parses OK, ERR, EVT
-    - Writes to TCP socket                - Prints to terminal
+```sh
+make run-cli
+make run-cli CLI_ADDR=127.0.0.1:4243
+make build-cli
+.build/tap-cli -addr 127.0.0.1:4242
 ```
 
----
+Enter CONNECT alice, then any documented protocol command. QUIT closes the
+session and client; input EOF also sends QUIT. Ctrl-C/Ctrl-D quit in interactive
+Linux mode, and SIGTERM cancels the client. The client waits at most five seconds
+for a server to acknowledge closure after QUIT; socket writes also have a
+five-second deadline.
 
-## 2. Command Interface Choice `🔴 TO_FILL`
+Two goroutines independently send input and receive OK/ERR/EVT. A mutex
+protects terminal rendering, so events remain visible while the user is typing.
+On Linux TTYs, a small stdlib termios adapter disables local echo and canonical
+input. The client redraws `> ` and the buffered text after events, supports
+UTF-8, backspace and Ctrl-U, and ignores arrow escape sequences. Original
+terminal attributes are restored before stdin closes, including on errors,
+remote disconnection and cancellation. Other platforms and pipes use portable
+line mode without ANSI rendering.
 
-The subject explicitly provides two design choices:
+```sh
+printf 'CONNECT alice\nLOOK\nQUESTS\nQUIT\n' | .build/tap-cli
+```
 
-* **Approach 1: Direct RFC Syntax**
-  - User types raw RFC commands directly into terminal (e.g., `LOOK`, `MOVE north`, `TAKE item.ale`).
-  - *Pros*: Zero translation layer, direct reflection of the protocol.
-  - *Cons*: Less intuitive for players who do not know the technical command verbs.
+Replies are displayed verbatim. The client does not consume responses as if
+unsolicited events were replies to commands. Commands and received lines are
+bounded at 4096 bytes including LF and validated as UTF-8. In line mode, CRLF
+input is normalized to LF; embedded CR/LF are rejected. Local oversized or
+invalid interactive commands display LOCAL ERROR and are not sent.
 
-* **Approach 2: User-Friendly Command Translation (Recommended)**
-  - Translates natural verbs into RFC commands:
-    - `go north` / `n` $\rightarrow$ `MOVE north`
-    - `get sword` / `take sword` $\rightarrow$ `TAKE item.rusty_sword`
-    - `inv` / `i` $\rightarrow$ `INVENTORY`
-    - `look` / `l` $\rightarrow$ `LOOK`
-    - `say hello` $\rightarrow$ `CHAT ROOM hello`
-  - Also accepts raw RFC syntax as fallback.
-  - *Pros*: Significantly better player ergonomics during peer-evaluations.
-
-> **Decision**: `🔴 TO_FILL` — Record chosen approach and justification for the README.
-
----
-
-## 3. Terminal Prompt & Visual Formatting
-
-- **Incoming Events (`EVT`)**: Formatted with distinct ANSI colors:
-  - Chat: `[CHAT/GLOBAL] <Alice>: Hello!` (Cyan)
-  - Presence: `[PRESENCE] Bob entered the room.` (Yellow)
-  - Combat: `[COMBAT] Alice attacks Goblin for 14 damage.` (Red)
-- **Prompt Preservation**:
-  - Ensure incoming messages do not corrupt half-typed input lines (using line clearing `\r\033[K` or standard line editing libraries).
+Tests cover piped commands, asynchronous rendering with half-typed input,
+UTF-8 editing, EOF, cancellation, malformed framing and an entire bounty run
+against the real TCP server. The binary is also checked on a Linux pseudo-terminal
+for idle remote disconnection and terminal restoration.

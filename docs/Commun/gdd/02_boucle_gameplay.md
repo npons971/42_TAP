@@ -30,7 +30,7 @@ flowchart TD
 
 ### Meso-Loop (À l'échelle d'une quête / zone)
 1. Parler à un donneur de quête (`TALK <npc>`).
-2. Obtenir l'objectif via `QUEST <id>`.
+2. Obtenir l'objectif via `QUEST <pnj>`.
 3. Explorer les embranchements pour trouver l'objet requis (`TAKE <item>`) ou vaincre l'adversaire (`ATTACK <npc>`).
 4. Revenir voir le commanditaire pour valider la quête et recevoir la récompense.
 
