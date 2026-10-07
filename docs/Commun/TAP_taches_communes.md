@@ -2,8 +2,8 @@
 
 Ce document regroupe les tâches partagées, l'architecture globale, les décisions techniques communes ainsi que l'ordre de développement recommandé pour le binôme.
 
-- **Aris (Dev A)** : Serveur + client CLI — voir [TAP_Aris_Dev_A.md](file:///home/almarc/42/42_TAP/TAP_Aris_Dev_A.md)
-- **Novanns (Dev B)** : Client GUI + World Design — voir [TAP_Novanns_Dev_B.md](file:///home/almarc/42/42_TAP/TAP_Novanns_Dev_B.md)
+- **Aris (Dev A)** : Serveur + client CLI — voir [TAP_Aris_Dev_A.md](../Dev_A/TAP_Aris_Dev_A.md)
+- **Novanns (Dev B)** : Client GUI + World Design — voir [TAP_Novanns_Dev_B.md](../Dev_B/TAP_Novanns_Dev_B.md)
 
 ---
 

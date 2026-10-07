@@ -1,8 +1,8 @@
 # TAP — Novanns (Dev B) : GUI + World Design
 
 Ce document regroupe les responsabilités et tâches attribuées à **Novanns (Dev B)**.  
-Pour les décisions d'équipe, le protocole partagé et l'architecture globale, se référer à [TAP_taches_communes.md](file:///home/almarc/42/42_TAP/TAP_taches_communes.md).  
-Pour la partie d'Aris (Dev A), voir [TAP_Aris_Dev_A.md](file:///home/almarc/42/42_TAP/TAP_Aris_Dev_A.md).
+Pour les décisions d'équipe, le protocole partagé et l'architecture globale, se référer à [TAP_taches_communes.md](Commun/TAP_taches_communes.md).  
+Pour la partie d'Aris (Dev A), voir [TAP_Aris_Dev_A.md](../Dev_A/TAP_Aris_Dev_A.md).
 
 ---
 

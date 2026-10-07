@@ -1,8 +1,8 @@
 # TAP — Aris (Dev A) : Serveur + CLI
 
 Ce document regroupe les responsabilités et tâches attribuées à **Aris (Dev A)**.  
-Pour les décisions d'équipe, le protocole partagé et l'architecture globale, se référer à [TAP_taches_communes.md](file:///home/almarc/42/42_TAP/TAP_taches_communes.md).  
-Pour la partie de Novanns (Dev B), voir [TAP_Novanns_Dev_B.md](file:///home/almarc/42/42_TAP/TAP_Novanns_Dev_B.md).
+Pour les décisions d'équipe, le protocole partagé et l'architecture globale, se référer à [TAP_taches_communes.md](Commun/TAP_taches_communes.md).  
+Pour la partie de Novanns (Dev B), voir [TAP_Novanns_Dev_B.md](../Dev_B/TAP_Novanns_Dev_B.md).
 
 ---
 
