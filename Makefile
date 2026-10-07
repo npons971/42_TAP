@@ -46,5 +46,6 @@ wails: go npm Makefile
 	touch $@
 
 clean:
+	@if test -d .go-work/pkg/mod; then find .go-work/pkg/mod -type d -exec chmod u+w {} +; fi
 	rm -rf .go-sdk .node-sdk .go-work .go-cache .npm-cache .webkit-sdk go node npm wails
 	rm -rf install_files
