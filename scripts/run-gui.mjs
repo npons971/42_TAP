@@ -4,6 +4,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { webkitRuntimeEnv } from './webkit-runtime.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const options = { host: '127.0.0.1', port: 4242, server: 'auto', world: 'data/world.json', dev: false };
@@ -79,6 +80,7 @@ try {
   if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
     throw new Error('A graphical session is required. Use make build-gui to compile without opening a window.');
   }
+  const guiEnv = webkitRuntimeEnv(repo, env);
   const local = ['127.0.0.1', 'localhost', '::1'].includes(options.host);
   if (options.server === 'auto' && local) {
     const status = await probe();
@@ -105,7 +107,7 @@ try {
   console.log('Ouverture du GUI — choisissez un pseudo puis CONNECT & PLAY.');
   gui = options.dev
     ? spawn(path.join(repo, 'wails'), ['dev', '-tags', 'webkit2_41'], { cwd: repo, env, stdio: 'inherit', detached: true })
-    : spawn(path.join(repo, 'Project/client-gui/build/bin/tap-gui'), [], { cwd: repo, env, stdio: 'inherit', detached: true });
+    : spawn(path.join(repo, 'Project/client-gui/build/bin/tap-gui'), [], { cwd: repo, env: guiEnv, stdio: 'inherit', detached: true });
   const code = await new Promise((resolve, reject) => {
     gui.once('error', reject);
     gui.once('exit', code => resolve(code ?? 1));

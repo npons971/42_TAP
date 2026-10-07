@@ -542,7 +542,7 @@
         <form class="connect-form" on:submit|preventDefault={handleConnect}>
           <div class="form-group username-field">
             <label for="username">Player name</label>
-            <input id="username" type="text" bind:value={username} placeholder="e.g. aris" required disabled={connecting} autocomplete="username" aria-describedby="username-hint" />
+            <input id="username" type="text" bind:value={username} placeholder="e.g. Garfield" required disabled={connecting} autocomplete="username" aria-describedby="username-hint" />
             <small id="username-hint">3–20 letters, digits or underscores. Uppercase letters are converted to lowercase.</small>
           </div>
           <div class="server-fields">
@@ -782,7 +782,7 @@
           {#if groupStatus}<p class="group-status" role="status">{groupStatus}</p>{/if}
           <div class="form-group" style="margin-bottom: 1rem;">
             <label for="groupTarget">Adventurer name</label>
-            <input id="groupTarget" type="text" bind:value={groupTarget} placeholder="e.g. aris" />
+            <input id="groupTarget" type="text" bind:value={groupTarget} placeholder="e.g. Garfield" />
           </div>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
             <button class="btn-action btn-talk" on:click={() => callGroup("CREATE")}>Create party</button>

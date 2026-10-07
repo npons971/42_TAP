@@ -127,7 +127,7 @@ function include(pkg) {
     include(provider.pkg);
   }
 }
-for (const name of ['gtk3-devel', 'webkit2gtk4.1-devel', 'pkgconf', 'pkgconf-pkg-config', 'libpkgconf']) {
+for (const name of ['gtk3-devel', 'webkit2gtk4.1-devel', 'webkit2gtk4.1', 'pkgconf', 'pkgconf-pkg-config', 'libpkgconf']) {
   const pkg = packages.get(name)?.sort((a, b) => compare(b.version, a.version))[0];
   if (!pkg) throw new Error('Package unavailable in this Fedora release: ' + name);
   include(pkg);

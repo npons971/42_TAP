@@ -11,5 +11,7 @@ export npm_config_cache="$repo/.npm-cache"
 export PKG_CONFIG_PATH="$repo/.webkit-sdk/usr/lib64/pkgconfig:$repo/.webkit-sdk/usr/lib/x86_64-linux-gnu/pkgconfig:$repo/.webkit-sdk/usr/lib/pkgconfig:$repo/.webkit-sdk/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
 export LD_LIBRARY_PATH="$repo/.webkit-sdk/usr/lib64:$repo/.webkit-sdk/usr/lib/x86_64-linux-gnu:$repo/.webkit-sdk/usr/lib:${LD_LIBRARY_PATH:-}"
 # Root-level ./wails commands always target this repository's GUI.
-if [[ "$PWD" == "$repo" ]]; then cd "$repo/Project/client-gui"; fi
-exec "$repo/.go-work/bin/wails" "$@"
+# Compare directory identity: make can use the physical path while the wrapper
+# resolves the same repository through a symlink (for example ~/goinfre).
+if [[ . -ef "$repo" ]]; then cd "$repo/Project/client-gui"; fi
+exec "$repo/node" "$repo/scripts/with-webkit.mjs" "$repo/.go-work/bin/wails" "$@"

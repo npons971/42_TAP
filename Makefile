@@ -45,7 +45,7 @@ help:
 
 build: build-server build-cli build-gui
 
-run-all:
+run-all: node
 	+bash scripts/run-all.sh "$(MAKE)" "$(SERVER_ADDR)" "$(WORLD_FILE)" "$(CLI_ADDR)" "$(GUI_HOST)" "$(GUI_PORT)"
 
 gui: build-server build-gui
@@ -120,7 +120,7 @@ test-all: test
 install: go npm gcc wails install-webkit
 	@$(OUTPUT) say 'Outils locaux prêts — make help pour les commandes'
 
-install-webkit: .webkit-sdk/.installed
+install-webkit: .webkit-sdk/.installed .build/libtap-webkit-launch.so
 	$(OUTPUT) run 'Vérification de GTK / WebKit' bash scripts/install-webkit.sh --check
 
 fetch-webkit: node
@@ -185,6 +185,10 @@ wails: .go-work/bin/wails npm scripts/wails-local.sh Makefile
 .webkit-sdk/.installed: scripts/install-webkit.sh scripts/fetch-webkit.mjs scripts/fetch-webkit-fedora.mjs node
 	$(OUTPUT) run 'Installation de GTK / WebKit et de ses dépendances' bash scripts/install-webkit.sh
 	touch $@
+
+.build/libtap-webkit-launch.so: scripts/webkit-launch-local.c .webkit-sdk/.installed cc
+	mkdir -p .build
+	$(OUTPUT) run 'Préparation du lanceur WebKit local' $(PROJECT_ROOT)/cc -shared -fPIC -Wall -Wextra -Werror -o $@ $< -ldl
 
 clean:
 	@$(OUTPUT) say 'Nettoyage des outils et caches locaux'

@@ -45,7 +45,9 @@ For a multiplayer demonstration, run `make run-all` in a graphical session.
 It starts the server in the current terminal, waits for the TAP greeting, then
 opens two separate terminals running `make run-client` and `make run-client-gui`. The GUI uses
 this server without starting another one. Press Ctrl+C in the original terminal
-to stop the server. A supported terminal emulator must be installed (GNOME
+to stop the server started by this command. An existing TAP server is reused and
+remains running; if another service occupies the port, the command exits with an
+explanation. A supported terminal emulator must be installed (GNOME
 Terminal, Konsole, Xfce Terminal, MATE Terminal, Kitty, Alacritty or xterm).
 Use `make build` to compile all three components without launching them.
 

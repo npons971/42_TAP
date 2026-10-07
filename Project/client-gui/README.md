@@ -47,6 +47,14 @@ cibles des liens de développement sont copiées dans le SDK.
 Les outils ne lancent aucune commande d'administration système.
 Une session graphique est nécessaire pour ouvrir la fenêtre.
 
+Les bibliothèques WebKit des distributions peuvent conserver un chemin fixe
+vers leurs processus auxiliaires dans `/usr`. Un adaptateur GIO compilé avec
+`./cc` dans `.build` redirige leur lancement vers les processus du SDK.
+Les lanceurs `make gui` et `./wails` chargent cet adaptateur et configurent le
+bundle injecté local ; aucune modification de `/usr` n'est nécessaire.
+`make check-gui` vérifie aussi ces fichiers. Après `make install`,
+`./node scripts/test-webkit-launch.mjs` teste la redirection sans ouvrir de fenêtre.
+
 ## Commandes de jeu
 
 Le GUI utilise huit couleurs rétro contrastées sur un fond ivoire, une police

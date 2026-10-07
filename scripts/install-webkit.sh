@@ -9,8 +9,18 @@ cache="$repo/install_files/webkit"
 . /etc/os-release
 
 signature="${ID:-}|${VERSION_ID:-}|$(uname -m)|$repo"
+has_webkit_processes() {
+  local prefix=$1 directory
+  for directory in "$prefix"/usr/{lib/x86_64-linux-gnu,lib64,libexec,lib}/webkit2gtk-4.1; do
+    if [[ -x "$directory/WebKitNetworkProcess" && -x "$directory/WebKitWebProcess" &&
+          -r "$directory/injected-bundle/libwebkit2gtkinjectedbundle.so" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 if [[ "${1:-}" == --check && -f "$sdk_destination/.host" &&
-      "$(cat "$sdk_destination/.host")" == "$signature" ]]; then
+      "$(cat "$sdk_destination/.host")" == "$signature" ]] && has_webkit_processes "$sdk_destination"; then
   exit 0
 fi
 
@@ -70,6 +80,11 @@ case " ${ID:-} ${ID_LIKE:-} " in
     exit 1
     ;;
 esac
+
+has_webkit_processes "$sdk" || {
+  echo 'Processus WebKit ou bundle injecté manquants dans le SDK local.' >&2
+  exit 1
+}
 
 # Les fichiers .pc des paquets pointent vers /usr ; adapte-les au SDK local.
 while IFS= read -r -d '' pc; do

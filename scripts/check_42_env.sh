@@ -22,6 +22,7 @@ check 'Wails local' test -x "$repo/.go-work/bin/wails"
 check 'Compilateur C local' "$repo/cc" --version
 check 'pkg-config local' "$sdk/bin/pkg-config" --version
 check 'GTK3 et WebKitGTK 4.1 locaux' "$sdk/bin/pkg-config" --exists gtk+-3.0 webkit2gtk-4.1
+check 'Processus et lanceur WebKit locaux' "$repo/node" --input-type=module -e "const { webkitRuntimeEnv } = await import(process.argv[2]); webkitRuntimeEnv(process.argv[1]);" "$repo" "$repo/scripts/webkit-runtime.mjs"
 if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
   printf '%s\n' '  OK  Session graphique annoncée (connexion à vérifier au lancement)'
 else

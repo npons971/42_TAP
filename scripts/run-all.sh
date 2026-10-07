@@ -10,6 +10,11 @@ cli_addr="$4"
 gui_host="$5"
 gui_port="$6"
 
+if [[ ! -x "$repo/node" ]]; then
+    echo 'Node local absent : lancez make install.' >&2
+    exit 1
+fi
+
 if [[ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
     echo 'make run-all nécessite une session graphique.' >&2
     exit 1
@@ -36,14 +41,32 @@ if [[ "$probe_host" != 127.0.0.1 && "$probe_host" != localhost && "$probe_host" 
     exit 1
 fi
 
-server_ready() (
-    exec 3<>"/dev/tcp/$probe_host/$probe_port" || exit 1
-    IFS= read -r -t 1 greeting <&3 || exit 1
-    [[ "$greeting" == 'OK hello proto=1' ]]
-) 2>/dev/null
+probe_server() {
+    "$repo/node" --input-type=module - "$probe_host" "$probe_port" <<'JS'
+import net from 'node:net';
+const socket = net.createConnection({ host: process.argv[2], port: Number(process.argv[3]) });
+let data = '', settled = false;
+const finish = status => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    socket.destroy();
+    console.log(status);
+};
+const timer = setTimeout(() => finish('occupied'), 1000);
+socket.on('error', error => finish(error.code === 'ECONNREFUSED' ? 'absent' : 'occupied'));
+socket.on('end', () => finish('occupied'));
+socket.on('data', chunk => {
+    data += chunk.toString('utf8');
+    if (data.includes('\n')) finish(data.split('\n')[0] === 'OK hello proto=1' ? 'tap' : 'occupied');
+    else if (data.length > 4096) finish('occupied');
+});
+JS
+}
 
-if server_ready; then
-    echo "Un serveur TAP tourne déjà sur $cli_addr. Arrêtez-le avant make run-all." >&2
+status="$(probe_server)"
+if [[ "$status" == occupied ]]; then
+    echo "Le port $cli_addr est occupé par un service qui ne répond pas comme un serveur TAP. Libérez le port ou choisissez SERVER_ADDR, CLI_ADDR et GUI_PORT correspondants." >&2
     exit 1
 fi
 
@@ -59,23 +82,32 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Job control gives the server and its build/run children their own process group.
-set -m
-"$make_command" run-server "SERVER_ADDR=$server_addr" "WORLD_FILE=$world_file" &
-server_pid=$!
-set +m
+if [[ "$status" == tap ]]; then
+    echo "Serveur TAP existant sur $cli_addr : réutilisation pour les deux clients."
+else
+    # Job control gives the server and its build/run children their own process group.
+    set -m
+    "$make_command" run-server "SERVER_ADDR=$server_addr" "WORLD_FILE=$world_file" &
+    server_pid=$!
+    set +m
 
-echo "Attente du serveur TAP sur $cli_addr…"
-while true; do
-    if ! kill -0 "$server_pid" 2>/dev/null; then
-        wait "$server_pid"
-        exit 1
-    fi
-    if server_ready; then
-        break
-    fi
-    sleep 0.1
-done
+    echo "Attente du serveur TAP sur $cli_addr…"
+    deadline=$((SECONDS + 120))
+    while true; do
+        if ! kill -0 "$server_pid" 2>/dev/null; then
+            wait "$server_pid"
+            exit 1
+        fi
+        if [[ "$(probe_server)" == tap ]]; then
+            break
+        fi
+        if (( SECONDS >= deadline )); then
+            echo "Le serveur TAP ne répond pas sur $cli_addr après 120 secondes. Vérifiez que SERVER_ADDR et CLI_ADDR correspondent." >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
+fi
 
 open_terminal() {
     local title="$1"
@@ -93,5 +125,10 @@ open_terminal() {
 
 open_terminal 'TAP — CLI' run-client "CLI_ADDR=$cli_addr" &
 open_terminal 'TAP — GUI' run-client-gui "GUI_HOST=$gui_host" "GUI_PORT=$gui_port" GUI_SERVER=off "WORLD_FILE=$world_file" &
-echo 'Clients ouverts dans deux terminaux. Ctrl+C ici pour arrêter le serveur.'
-wait "$server_pid"
+if [[ -n "$server_pid" ]]; then
+    echo 'Clients ouverts dans deux terminaux. Ctrl+C ici pour arrêter le serveur.'
+    wait "$server_pid"
+else
+    echo 'Clients ouverts dans deux terminaux. Le serveur existant reste actif.'
+    wait
+fi

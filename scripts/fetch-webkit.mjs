@@ -98,7 +98,9 @@ function include(pkg) {
 const pkgConfigPackages = packages.has('pkgconf-bin')
   ? ['pkgconf', 'pkgconf-bin', 'libpkgconf3']
   : ['pkg-config'];
-for (const name of ['libgtk-3-dev', 'libwebkit2gtk-4.1-dev', ...pkgConfigPackages]) {
+// Always extract WebKit's runtime: it also supplies the local child processes
+// and injected bundle, even when a compatible library exists on the host.
+for (const name of ['libgtk-3-dev', 'libwebkit2gtk-4.1-dev', 'libwebkit2gtk-4.1-0', ...pkgConfigPackages]) {
   const pkg = packages.get(name);
   if (!pkg) throw new Error('Package unavailable in this release: ' + name);
   include(pkg);
