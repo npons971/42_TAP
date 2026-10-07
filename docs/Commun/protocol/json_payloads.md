@@ -1,10 +1,12 @@
 # RFC 42TAP — JSON Payloads Specification
 
-> **Document Status**: `🔴 TO_FILL (Team Agreement Required)`  
+> **Document Status**: `🔵 IN_REVIEW (Dev A proposal; Dev B review pending)`
 > **Assigned to**: Aris (Dev A) & Novanns (Dev B)  
 > **Last Updated**: 2026-10-07
 
-The RFC protocol returns JSON payloads for complex state responses. This document formalizes the canonical JSON schema for each command to guarantee seamless interoperability between the server and both clients (CLI & GUI).
+The protocol returns one compact JSON value after `OK ` for complex state responses. These are the proposed field names and types for both clients. The wire-format rules and identifier conventions are in [rfc_syntax.md](rfc_syntax.md). The attached RFC takes precedence if it mandates a different exact shape.
+
+All listed fields are present, even when their arrays are empty. IDs are stable and globally unique; display names are UTF-8 text. The server serializes each payload on one line and keeps the complete line, including LF, within 4,096 bytes.
 
 ---
 
@@ -12,7 +14,7 @@ The RFC protocol returns JSON payloads for complex state responses. This documen
 
 Sent in response to the `LOOK` command.
 
-### Proposed Schema `🔴 TO_FILL`
+### Proposed schema `🔵 IN_REVIEW`
 
 ```json
 {
@@ -26,7 +28,7 @@ Sent in response to the `LOOK` command.
       "west": "loc.dark_alley"
     }
   },
-  "players": ["bob", "charlie"],
+  "players": ["alice", "bob"],
   "items": [
     {
       "id": "item.apple",
@@ -44,10 +46,7 @@ Sent in response to the `LOOK` command.
 }
 ```
 
-> **Design Choice Pending `🔴 TO_FILL`**:  
-> - **Option A**: Return compact arrays of string IDs for items and npcs: `"items": ["item.apple"], "npcs": ["npc.guard"]`.  
-> - **Option B**: Return full descriptor objects (name, description, obtainable) as shown above so GUI can render immediately without extra queries.  
-> *(Recommendation: Option B simplifies GUI rendering and reduces round-trip queries).*
+`room.id`, `room.name`, and `room.description` are strings. `room.exits` maps lowercase directions to room IDs. `players` is an array of usernames in the room, including the requester. `items` is an array of `{id:string,name:string,obtainable:boolean}` objects; `npcs` is an array of `{id:string,name:string,role:string}` objects. Use `[]` for empty lists and `{}` for a room without exits. The detailed descriptors let the GUI render without a separate catalogue request.
 
 ---
 
@@ -55,7 +54,7 @@ Sent in response to the `LOOK` command.
 
 Sent in response to `STATUS`.
 
-### Proposed Schema `🔵 IN_REVIEW`
+### Proposed schema `🔵 IN_REVIEW`
 
 ```json
 {
@@ -71,7 +70,7 @@ Sent in response to `STATUS`.
   }
 }
 ```
-*Note: If player is outside combat, `"combat": null` and `"state": "HORS_COMBAT"`.*
+`player` is a username; `hp` and `max_hp` are integers. Outside combat, `"combat":null` and `"state":"HORS_COMBAT"`. In combat, `"state":"EN_COMBAT"` and `combat` has the four fields shown above. Combat mechanics and any additional states need a separate team decision.
 
 ---
 
@@ -79,7 +78,7 @@ Sent in response to `STATUS`.
 
 Sent in response to `WHO`.
 
-### Standard RFC Schema `🟢 VALIDATED`
+### Existing schema `🟢 VALIDATED`
 
 ```json
 {
@@ -94,28 +93,16 @@ Sent in response to `WHO`.
 
 Sent in response to `INVENTORY`.
 
-### Proposed Schema `🔴 TO_FILL`
+### Proposed schema `🔵 IN_REVIEW`
 
-- **Option A (Compact ID list)**:
-  ```json
-  ["item.rusty_sword", "item.rare_herbs", "item.apple"]
-  ```
-- **Option B (Detailed item array)**:
-  ```json
-  [
-    {
-      "id": "item.rusty_sword",
-      "name": "Rusty Sword",
-      "type": "weapon",
-      "damage_bonus": 10
-    },
-    {
-      "id": "item.rare_herbs",
-      "name": "Rare Herbs",
-      "type": "quest"
-    }
-  ]
-  ```
+```json
+[
+  {"id": "item.rusty_sword", "name": "Rusty Sword"},
+  {"id": "item.rare_herbs", "name": "Rare Herbs"}
+]
+```
+
+The response is an array of `{id:string,name:string}`. An empty inventory is `OK []`. The GUI sends the `id` from this array for `DROP`. Item-specific attributes such as damage bonus belong to the item model and can be added only through an agreed schema revision.
 
 ---
 
@@ -162,7 +149,7 @@ Sent in response to `INVENTORY`.
 
 Sent in response to `TALK`.
 
-### Standard RFC Schema `🟢 VALIDATED`
+### Existing schema `🟢 VALIDATED`
 
 ```json
 {
@@ -170,3 +157,11 @@ Sent in response to `TALK`.
   "dialogue": "Stay safe, traveler. The ruins to the east are full of cutthroats."
 }
 ```
+
+The `npc` value is the stable NPC ID; `dialogue` is UTF-8 text encoded as a JSON string.
+
+---
+
+## 7. Compatibility note
+
+The subject's example exchanges show arrays of item IDs for `LOOK` and `INVENTORY`. This proposal uses descriptor objects so the GUI can show names without a local copy of world data. Confirm that the attached RFC permits these shapes. If it does not, update both clients and this document to match the RFC, and record any approved deviation in the root README.

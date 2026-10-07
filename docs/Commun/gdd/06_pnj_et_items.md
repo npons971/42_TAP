@@ -33,7 +33,7 @@ Le sujet requiert au minimum **3 rôles distincts** de PNJ. Notre univers en pro
   - `DROP` le replace dans la pièce où se tient le joueur.
   - Aucune duplication possible.
 - Support complet des noms composés de plusieurs mots (ex: `Herbes Rares`, `Épée Rouillée`).
-- Résolution indifférente par ID technique (ex: `item.rare_herbs`) ou par nom affiché sensible/insensible à la casse.
+- Résolution par ID technique (ex: `item.rare_herbs`) ou par nom affiché complet sans tenir compte de la casse. Si plusieurs objets du même contexte ont le même nom affiché, le serveur répond `ERR invalid_arguments Ambiguous name` ; les clients envoient de préférence l'ID unique.
 
 ### Catalogue des Objets
 
@@ -59,4 +59,4 @@ Le sujet requiert au minimum **3 rôles distincts** de PNJ. Notre univers en pro
 - `DROP <objet>` :
   - Si présent dans l'inventaire : retiré de l'inventaire, placé au sol -> `OK dropped=item.<id>`
   - Si absent de l'inventaire : `ERR not_in_inventory`
-- `INVENTORY` : retourne la liste exhaustive des objets actuellement possédés.
+- `INVENTORY` : retourne la liste exhaustive des objets actuellement possédés, sous la forme `OK [{"id":"item.apple","name":"Pomme Fraîche"}]` (proposition de [schéma JSON partagé](../protocol/json_payloads.md), en revue).
