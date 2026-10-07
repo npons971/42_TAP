@@ -28,8 +28,14 @@ func ensureServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get repo root: %v", err)
 	}
+	serverBin := filepath.Join(repoRoot, ".build", "tap-server")
 	goBin := filepath.Join(repoRoot, "go")
-	cmd := exec.Command(goBin, "run", "./cmd/server", "-addr", "127.0.0.1:4242")
+	buildCmd := exec.Command(goBin, "build", "-o", serverBin, "./cmd/server")
+	buildCmd.Dir = repoRoot
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to build server: %v (%s)", err, string(out))
+	}
+	cmd := exec.Command(serverBin, "-addr", "127.0.0.1:4242")
 	cmd.Dir = repoRoot
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("Failed to auto-start server: %v", err)
@@ -37,6 +43,7 @@ func ensureServer(t *testing.T) {
 	t.Cleanup(func() {
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
 		}
 	})
 
