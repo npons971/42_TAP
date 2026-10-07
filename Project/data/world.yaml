@@ -14,6 +14,7 @@ world:
         north: "loc.garden"
         west: "loc.dark_alley"
       items:
+        - "item.apple"
         - "item.fountain"
       spawns:
         - npc_id: "npc.guard"
@@ -26,8 +27,7 @@ world:
         west: "loc.town_square"
         north: "loc.tavern"
         east: "loc.ruins_gate"
-      items:
-        - "item.apple"
+      items: []
       spawns:
         - npc_id: "npc.merchant"
           count: 1
@@ -52,8 +52,7 @@ world:
         south: "loc.town_square"
         east: "loc.tavern"
         down: "loc.sewers"
-      items:
-        - "item.rusty_sword"
+      items: []
       spawns:
         - npc_id: "npc.thief"
           count: 1
@@ -66,6 +65,7 @@ world:
         south: "loc.sewers"
       items:
         - "item.torch"
+        - "item.vigor_potion"
       spawns: []
 
     loc.sewers:
@@ -74,7 +74,8 @@ world:
       exits:
         north: "loc.cellar"
         up: "loc.dark_alley"
-      items: []
+      items:
+        - "item.rare_herbs"
       spawns:
         - npc_id: "npc.giant_rat"
           count: 1
@@ -108,7 +109,8 @@ world:
       exits:
         south: "loc.town_square"
       items:
-        - "item.rare_herbs"
+        - "item.rusty_sword"
+        - "item.ancient_key"
       spawns:
         - npc_id: "npc.herbalist"
           count: 1

@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
   // Connection State
   let connected = false;
@@ -7,7 +7,7 @@
   let connectionError = "";
   let host = "127.0.0.1";
   let port = 4242;
-  let username = "Novanns";
+  let username = "novanns";
 
   // Player & Game State
   let playerHP = 100;
@@ -28,9 +28,30 @@
     players: []
   };
 
+  // Room names mapping for intuitive navigation
+  const roomNames = {
+    "loc.town_square": "Village Square",
+    "loc.market": "Central Market",
+    "loc.tavern": "The Slumbering Dragon",
+    "loc.dark_alley": "Dark Alley",
+    "loc.cellar": "Tavern Cellar",
+    "loc.sewers": "Damp Sewers",
+    "loc.ruins_gate": "Ruins Gate",
+    "loc.ruins_den": "Cutthroat's Den",
+    "loc.garden": "Overgrown Garden"
+  };
+
+  function getDestName(destId) {
+    return roomNames[destId] || destId.replace(/^loc\./, '').replace(/_/g, ' ');
+  }
+
   // Inventory & Quests
   let inventory = [];
   let quests = [];
+
+  // Group Management & Modal
+  let showGroupModal = false;
+  let groupTarget = "";
 
   // NPC Dialogue Modal
   let activeDialogue = null; // { npc: "...", text: "..." }
@@ -38,12 +59,21 @@
   // Chat & Logs Tabs (Mandatory Subject requirement V.4)
   let activeTab = "global"; // "global" | "room" | "group" | "logs"
   let chatInput = "";
+  let chatViewport = null;
   let messages = {
     global: [],
     room: [],
     group: [],
     logs: []
   };
+
+  // Auto-scroll chat view to bottom
+  async function scrollToBottom() {
+    await tick();
+    if (chatViewport) {
+      chatViewport.scrollTop = chatViewport.scrollHeight;
+    }
+  }
 
   // Helper for adding messages
   function addMessage(channel, sender, text, type = "normal") {
@@ -56,11 +86,13 @@
     if (channel !== 'logs') {
       messages.logs = [...messages.logs, { time, sender: `[${channel.toUpperCase()}] ${sender}`, text, type }];
     }
+    scrollToBottom();
   }
 
   function addLog(text, type = "info") {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     messages.logs = [...messages.logs, { time, sender: "SYSTEM", text, type }];
+    scrollToBottom();
   }
 
   // Wails Bindings Safe Access
@@ -200,6 +232,10 @@
   function handleServerERR(payload) {
     addLog(`S: ERR ${payload}`, "error");
     addMessage("room", "SERVER", `Error: ${payload}`, "error");
+    if (connecting) {
+      connecting = false;
+      connectionError = payload;
+    }
   }
 
   function handleServerEVT(payload) {
@@ -217,13 +253,21 @@
     } else if (evtType === "PRESENCE") {
       const action = parts[2] || ""; // ENTER or LEAVE
       const targetUser = parts[3] || "";
-      addMessage("room", "ROOM", `${targetUser} ${action === "ENTER" ? "entered" : "left"} the room.`, "presence");
+      const text = `${targetUser} ${action === "ENTER" ? "entered" : "left"} the room.`;
+      addMessage("room", "ROOM", text, "presence");
       callLook();
+      callWho();
     } else if (evtType === "COMBAT") {
       addMessage("room", "COMBAT", rest, "combat");
       callStatus();
     } else if (evtType === "ITEM") {
-      addMessage("room", "ROOM", rest, "item");
+      const action = parts[2] || ""; // TAKE or DROP
+      const actor = parts[3] || "";
+      const itemId = parts[4] || "";
+      const cleanItem = itemId.replace(/^item\./, '').replace(/_/g, ' ');
+      const actionVerb = action === "TAKE" ? "picked up" : "dropped";
+      const text = `${actor} ${actionVerb} ${cleanItem} (${itemId}).`;
+      addMessage("room", "ROOM", text, "item");
       callLook();
     }
   }
@@ -232,6 +276,12 @@
   async function handleConnect() {
     connecting = true;
     connectionError = "";
+    username = (username || "").trim().toLowerCase();
+    if (!username.match(/^[a-z][a-z0-9_]{2,19}$/)) {
+      connectionError = "Username must be 3-20 lowercase alphanumeric characters (or underscores), starting with a letter.";
+      connecting = false;
+      return;
+    }
     const backend = getBackend();
     if (!backend) {
       connectionError = "Wails backend not available";
@@ -253,6 +303,10 @@
       await backend.Disconnect();
     }
     connected = false;
+    connecting = false;
+    connectionError = "";
+    inventory = [];
+    currentRoom.players = [];
   }
 
   async function callMove(direction) {
@@ -303,6 +357,30 @@
   async function callWho() {
     const backend = getBackend();
     if (backend) await backend.Who();
+  }
+
+  async function callGroup(action, target) {
+    const backend = getBackend();
+    if (backend) {
+      await backend.Group(action, target || "");
+      addLog(`C: GROUP ${action} ${target || ''}`.trim(), "info");
+    }
+  }
+
+  async function callDefend() {
+    const backend = getBackend();
+    if (backend) {
+      await backend.SendCommand("DEFEND");
+      addLog("C: DEFEND", "info");
+    }
+  }
+
+  async function callFlee() {
+    const backend = getBackend();
+    if (backend) {
+      await backend.SendCommand("FLEE");
+      addLog("C: FLEE", "info");
+    }
   }
 
   async function handleSendMessage() {
@@ -393,7 +471,7 @@
               {#each Object.entries(currentRoom.exits) as [dir, dest]}
                 <button class="btn-exit" on:click={() => callMove(dir)}>
                   <span class="dir-tag">{dir.toUpperCase()}</span>
-                  <span class="dest-tag">{dest}</span>
+                  <span class="dest-tag">{getDestName(dest)}</span>
                 </button>
               {/each}
               {#if Object.keys(currentRoom.exits).length === 0}
@@ -443,6 +521,23 @@
               {/if}
             </div>
           </div>
+
+          <!-- PLAYERS IN ROOM -->
+          <div class="entity-card">
+            <h4>PLAYERS PRESENT ({currentRoom.players.length})</h4>
+            <div class="entity-list">
+              {#each currentRoom.players as player}
+                <div class="entity-item">
+                  <span class="player-tag {player === username ? 'player-self' : 'player-other'}">
+                    👤 {player} {player === username ? '(You)' : ''}
+                  </span>
+                </div>
+              {/each}
+              {#if currentRoom.players.length === 0}
+                <div class="empty-list">No other adventurers here</div>
+              {/if}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -465,6 +560,19 @@
           </div>
         </div>
 
+        {#if combatState === 'EN_COMBAT'}
+          <div class="combat-bar">
+            <span class="combat-target-label">TARGET: <strong>{currentTarget || 'Hostile Enemy'}</strong></span>
+            <div class="combat-buttons">
+              {#if currentTarget}
+                <button class="btn-action btn-attack" on:click={() => callAttack(currentTarget)}>ATTACK</button>
+              {/if}
+              <button class="btn-action btn-talk" on:click={callDefend}>DEFEND</button>
+              <button class="btn-action btn-drop" on:click={callFlee}>FLEE</button>
+            </div>
+          </div>
+        {/if}
+
         <div class="inventory-section">
           <div class="panel-header-sub">
             <h3>INVENTORY ({inventory.length})</h3>
@@ -483,6 +591,31 @@
           </div>
         </div>
 
+        <!-- ACTIVE QUESTS TRACKER -->
+        <div class="quests-section">
+          <div class="panel-header-sub">
+            <h3>ACTIVE QUESTS ({quests.length})</h3>
+            <button class="btn-tiny" on:click={callQuests}>REFRESH</button>
+          </div>
+          <div class="quests-list">
+            {#each quests as q}
+              <div class="quest-card-item">
+                <div class="quest-title-row">
+                  <span class="quest-title">{q.title || q.id}</span>
+                  <span class="quest-status-badge {q.status || 'active'}">{q.status || 'ACTIVE'}</span>
+                </div>
+                <p class="quest-desc">{q.description || ''}</p>
+                {#if q.giver}
+                  <div class="quest-meta">Giver: <strong>{q.giver.replace(/^npc\./, '')}</strong></div>
+                {/if}
+              </div>
+            {/each}
+            {#if quests.length === 0}
+              <div class="empty-list">No active quests. Talk to NPCs to explore!</div>
+            {/if}
+          </div>
+        </div>
+
         <!-- QUICK ACTION BUTTONS -->
         <div class="actions-section">
           <h3>GAME ACTIONS</h3>
@@ -491,6 +624,7 @@
             <button class="btn-quick" on:click={callStatus}>STATUS</button>
             <button class="btn-quick" on:click={callQuests}>QUESTS</button>
             <button class="btn-quick" on:click={callWho}>WHO</button>
+            <button class="btn-quick" on:click={() => showGroupModal = true}>GROUP</button>
           </div>
         </div>
       </aside>
@@ -513,7 +647,7 @@
         </button>
       </div>
 
-      <div class="chat-viewport">
+      <div class="chat-viewport" bind:this={chatViewport}>
         {#each messages[activeTab] as msg}
           <div class="chat-row {msg.type}">
             <span class="msg-time">[{msg.time}]</span>
@@ -548,6 +682,29 @@
           </div>
           <p class="dialogue-speech">"{activeDialogue.text}"</p>
           <button class="btn-primary" on:click={() => activeDialogue = null}>CONTINUE</button>
+        </div>
+      </div>
+    {/if}
+
+    <!-- GROUP MANAGEMENT MODAL -->
+    {#if showGroupModal}
+      <div class="modal-backdrop">
+        <div class="dialogue-card" role="dialog" aria-modal="true" aria-label="Group Management">
+          <div class="dialogue-header">
+            <h3>PARTY & GROUP ACTIONS</h3>
+            <button class="btn-close" on:click={() => showGroupModal = false}>✕</button>
+          </div>
+          <p class="subtitle" style="margin-bottom: 1rem;">Coordinate and adventure together with fellow players.</p>
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="groupTarget">ADVENTURER USERNAME</label>
+            <input id="groupTarget" type="text" bind:value={groupTarget} placeholder="e.g. aris" />
+          </div>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button class="btn-action btn-talk" on:click={() => callGroup("INVITE", groupTarget)}>INVITE</button>
+            <button class="btn-action btn-take" on:click={() => callGroup("ACCEPT", groupTarget)}>ACCEPT</button>
+            <button class="btn-action btn-drop" on:click={() => callGroup("LEAVE", "")}>LEAVE PARTY</button>
+            <button class="btn-primary" style="margin-left: auto; padding: 0.35rem 0.8rem;" on:click={() => showGroupModal = false}>CLOSE</button>
+          </div>
         </div>
       </div>
     {/if}
@@ -835,11 +992,22 @@
   /* ENTITIES */
   .entities-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 0.6rem;
     padding: 0.8rem;
     border-top: 1px solid #21262d;
     flex: 1;
+  }
+
+  .player-tag {
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .player-tag.player-self {
+    color: #3fb950;
+  }
+  .player-tag.player-other {
+    color: #58a6ff;
   }
 
   .entity-card {
@@ -901,15 +1069,44 @@
   .hp-bar-bg { background: #21262d; border-radius: 4px; height: 12px; overflow: hidden; border: 1px solid #30363d; }
   .hp-bar-fill { background: linear-gradient(90deg, #da3633, #238636); height: 100%; transition: width 0.3s; }
 
+  .combat-bar {
+    background: rgba(182, 35, 36, 0.15);
+    border: 1px solid #b62324;
+    border-radius: 4px;
+    padding: 0.4rem 0.6rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .combat-target-label {
+    font-size: 0.75rem;
+    color: #f85149;
+    font-weight: 700;
+  }
+  .combat-buttons {
+    display: flex;
+    gap: 0.3rem;
+  }
+
   .inventory-section { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .panel-header-sub { display: flex; justify-content: space-between; align-items: center; }
   .panel-header-sub h3 { margin: 0 0 0.4rem; font-size: 0.8rem; color: #8b949e; }
   .inventory-list { background: #0d1117; border: 1px solid #21262d; border-radius: 4px; padding: 0.4rem; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 0.3rem; }
   .inventory-item { display: flex; justify-content: space-between; align-items: center; padding: 0.3rem 0.5rem; background: #161b22; border-radius: 3px; font-size: 0.85rem; }
 
+  /* QUESTS */
+  .quests-section { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .quests-list { background: #0d1117; border: 1px solid #21262d; border-radius: 4px; padding: 0.4rem; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 0.35rem; }
+  .quest-card-item { background: #161b22; border-left: 3px solid #e3b341; border-radius: 3px; padding: 0.4rem 0.6rem; }
+  .quest-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2rem; }
+  .quest-title { font-size: 0.8rem; font-weight: 700; color: #f0f6fc; }
+  .quest-status-badge { font-size: 0.65rem; padding: 1px 4px; border-radius: 3px; background: #238636; color: #fff; font-weight: 700; }
+  .quest-desc { font-size: 0.75rem; color: #8b949e; margin: 0 0 0.2rem; line-height: 1.3; }
+  .quest-meta { font-size: 0.7rem; color: #6e7681; }
+
   .actions-section h3 { margin: 0 0 0.4rem; font-size: 0.8rem; color: #8b949e; }
-  .action-buttons-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; }
-  .btn-quick { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 0.45rem; font-size: 0.75rem; font-weight: 700; border-radius: 4px; cursor: pointer; }
+  .action-buttons-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.35rem; }
+  .btn-quick { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 0.45rem 0.2rem; font-size: 0.75rem; font-weight: 700; border-radius: 4px; cursor: pointer; text-align: center; }
   .btn-quick:hover { border-color: #58a6ff; color: #fff; }
 
   /* CHAT PANEL */

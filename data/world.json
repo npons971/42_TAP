@@ -4,20 +4,97 @@
     "items": [
       {"id": "item.apple", "name": "Pomme fraîche", "obtainable": true},
       {"id": "item.fountain", "name": "Fontaine de pierre", "obtainable": false},
+      {"id": "item.ale", "name": "Chope de bière", "obtainable": true},
       {"id": "item.rusty_sword", "name": "Épée rouillée", "obtainable": true},
-      {"id": "item.ancient_key", "name": "Clé ancienne", "obtainable": true}
+      {"id": "item.torch", "name": "Torche en bois", "obtainable": true},
+      {"id": "item.wooden_shield", "name": "Bouclier en bois", "obtainable": true},
+      {"id": "item.rare_herbs", "name": "Herbes médicinales rares", "obtainable": true},
+      {"id": "item.mystery_chest", "name": "Coffre en fer renforcé", "obtainable": false},
+      {"id": "item.ancient_key", "name": "Clé ancienne", "obtainable": true},
+      {"id": "item.vigor_potion", "name": "Potion de vigueur", "obtainable": true}
     ],
     "locations": {
       "loc.town_square": {
         "name": "Place du Village",
-        "description": "Une place pavee au centre du village.",
-        "exits": {"north": "loc.garden"},
+        "description": "Une place pavée baignée d'une douce lumière. Au centre se dresse une fontaine de pierre où coule une eau claire. Les aventuriers s'y rassemblent.",
+        "exits": {
+          "north": "loc.garden",
+          "east": "loc.market",
+          "west": "loc.dark_alley"
+        },
         "items": ["item.apple", "item.fountain"]
       },
+      "loc.market": {
+        "name": "Marché Central",
+        "description": "Une allée animée bordée d'étals colorés et de sacs d'épices. L'odeur du pain chaud et des fruits mûrs embaume l'air.",
+        "exits": {
+          "west": "loc.town_square",
+          "north": "loc.tavern",
+          "east": "loc.ruins_gate"
+        },
+        "items": []
+      },
+      "loc.tavern": {
+        "name": "Taverne du Dragon Endormi",
+        "description": "Une auberge chaleureuse éclairée par un grand feu de cheminée. Une trappe en bois massif mène à la cave.",
+        "exits": {
+          "south": "loc.market",
+          "west": "loc.dark_alley",
+          "down": "loc.cellar"
+        },
+        "items": ["item.ale"]
+      },
+      "loc.dark_alley": {
+        "name": "Ruelle Sombre",
+        "description": "Un passage étroit et ténébreux entre de hauts murs de briques. Une grille d'égout rouillée baille dans le coin.",
+        "exits": {
+          "south": "loc.town_square",
+          "east": "loc.tavern",
+          "down": "loc.sewers"
+        },
+        "items": []
+      },
+      "loc.cellar": {
+        "name": "Cave de la Taverne",
+        "description": "Une cave fraîche aux voûtes basses, encombrée de tonneaux de vin et de toiles d'araignées. Un passage discret s'enfonce vers le sud.",
+        "exits": {
+          "up": "loc.tavern",
+          "south": "loc.sewers"
+        },
+        "items": ["item.torch", "item.vigor_potion"]
+      },
+      "loc.sewers": {
+        "name": "Égouts Humides",
+        "description": "Un réseau souterrain résonnant où s'écoulent des eaux sombres le long d'étroites passerelles de pierre glissante.",
+        "exits": {
+          "north": "loc.cellar",
+          "up": "loc.dark_alley"
+        },
+        "items": ["item.rare_herbs"]
+      },
+      "loc.ruins_gate": {
+        "name": "Porte des Ruines",
+        "description": "Une imposante arche de pierre effondrée marquant l'entrée de fortifications oubliées. Le vent souffle froidement depuis les montagnes.",
+        "exits": {
+          "west": "loc.market",
+          "north": "loc.ruins_den"
+        },
+        "items": ["item.wooden_shield"]
+      },
+      "loc.ruins_den": {
+        "name": "Repaire des Coupe-gorges",
+        "description": "Un bastion souterrain fortifié établi sous une voûte fracturée. Des caisses pillées entourent un feu de camp menaçant.",
+        "exits": {
+          "south": "loc.ruins_gate"
+        },
+        "items": ["item.mystery_chest"]
+      },
       "loc.garden": {
-        "name": "Jardin Abandonne",
-        "description": "Un jardin calme envahi par les herbes.",
-        "exits": {"south": "loc.town_square"},
+        "name": "Jardin Abandonné",
+        "description": "Une clairière paisible où la nature a repris ses droits. Des plantes médicinales et des herbes rares poussent à l'ombre de saules pleureurs.",
+        "exits": {
+          "south": "loc.town_square"
+        },
         "items": ["item.rusty_sword", "item.ancient_key"]
       }
     }

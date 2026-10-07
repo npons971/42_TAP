@@ -1,16 +1,36 @@
-.PHONY: install clean build-server run-server test-server
+.PHONY: install clean build-server run-server test-server build-frontend test-client test-integration test-all
+
+PROJECT_ROOT := $(CURDIR)
+GO := $(PROJECT_ROOT)/go
+NODE := $(PROJECT_ROOT)/node
+NPM := $(PROJECT_ROOT)/npm
+WAILS := $(PROJECT_ROOT)/wails
 
 SERVER_ADDR ?= :4242
 
 build-server:
 	mkdir -p .build
-	go build -o .build/tap-server ./cmd/server
+	$(GO) build -o .build/tap-server ./cmd/server
 
 run-server:
-	go run ./cmd/server -addr "$(SERVER_ADDR)"
+	$(GO) run ./cmd/server -addr "$(SERVER_ADDR)"
 
 test-server:
-	go test -race ./internal/server
+	@if command -v gcc >/dev/null 2>&1; then \
+		$(GO) test -race ./internal/server; \
+	else \
+		$(GO) test ./internal/server; \
+	fi
+
+build-frontend:
+	$(NPM) --prefix Project/client-gui/frontend run build
+
+test-client:
+	cd Project/client-gui && GOPATH="$(PROJECT_ROOT)/.go-work" GOCACHE="$(PROJECT_ROOT)/.go-cache" $(GO) test -v .
+
+test-integration: test-client
+
+test-all: test-server test-client
 
 install: go npm wails .webkit-sdk/.installed
 
