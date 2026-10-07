@@ -15,3 +15,4 @@ go: install_files/go1.27.1.linux-amd64.tar.gz
 
 clean:
 	rm -rf .go-sdk go
+	rm -f install_files/go1.27.1.linux-amd64.tar.gz
