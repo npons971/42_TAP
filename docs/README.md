@@ -2,6 +2,15 @@
 
 La documentation est organisée par responsabilité. Les documents partagés ont une seule source dans `Commun/` ; `Dev_A/Commun` et `Dev_B/Commun` sont des liens symboliques vers ce dossier.
 
+| Tag | Meaning | Action Required |
+|---|---|---|
+| `🔴 TO_FILL` | **Decision Pending / To Specify** | Team must choose options, define formulas, or provide details |
+| `🟡 IN_PROGRESS` | **Work In Progress** | Under active drafting or implementation |
+| `🔵 IN_REVIEW` | **Pending Review** | Ready for peer review and mutual alignment |
+| `🟢 VALIDATED` | **Approved & Locked** | Finalized baseline specification |
+
+
+
 ## Dev A — Aris : serveur et CLI
 
 - [Tâches de Dev A](Dev_A/TAP_Aris_Dev_A.md)
