@@ -8,8 +8,16 @@ import (
 )
 
 type itemLocation struct {
-	roomID string
-	owner  *client
+	roomID   string
+	owner    *client
+	reserved bool
+	consumed bool
+}
+
+type itemView struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Obtainable bool   `json:"obtainable"`
 }
 
 type roomView struct {
@@ -70,6 +78,9 @@ func (s *Server) transferItem(c *client, verb, target string, hasArgs bool) bool
 // TAKE requests cannot acquire the same instance.
 func (s *Server) resolveItemLocked(c *client, verb, target string) (string, bool) {
 	inContext := func(location itemLocation) bool {
+		if location.reserved || location.consumed {
+			return false
+		}
 		if verb == "DROP" {
 			return location.owner == c
 		}
@@ -120,11 +131,12 @@ func (s *Server) inventory(c *client, args []string) bool {
 	return queue(c.outbox, "OK "+string(payload))
 }
 
-func (s *Server) roomItemsLocked(roomID string) []Item {
-	items := make([]Item, 0)
+func (s *Server) roomItemsLocked(roomID string) []itemView {
+	items := make([]itemView, 0)
 	for id, location := range s.itemLocations {
-		if location.owner == nil && location.roomID == roomID {
-			items = append(items, s.world.Items[id])
+		if !location.reserved && !location.consumed && location.owner == nil && location.roomID == roomID {
+			item := s.world.Items[id]
+			items = append(items, itemView{ID: item.ID, Name: item.Name, Obtainable: item.Obtainable})
 		}
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })

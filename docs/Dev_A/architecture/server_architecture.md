@@ -98,7 +98,7 @@ type GameState struct {
 
 ## 4. Static World Loader & Validation `🔵 IN_REVIEW`
 
-On startup, the server loads static world definitions from `world.yaml` or `world.json`:
+On startup, the server loads static world definitions from `data/world.json` (the canonical runtime file; YAML is an archived design snapshot):
 1. **Parsing**: Deserializes raw file into intermediate Go structs.
 2. **Integrity Checks (Mandatory Validation)**:
    - Check that all room exit targets point to existing room IDs.

@@ -43,6 +43,7 @@ Sent in response to the `LOOK` command.
       "role": "dialogue"
     }
   ]
+}
 ```
 
 `room.id`, `room.name`, and `room.description` are strings. `room.exits` maps lowercase directions to room IDs. `players` is an array of usernames in the room, including the requester. `items` is an array of `{id:string,name:string,obtainable:boolean}` objects; `npcs` is an array of `{id:string,name:string,role:string}` objects. Use `[]` for empty lists and `{}` for a room without exits. The detailed descriptors let the GUI render without a separate catalogue request.
@@ -161,6 +162,8 @@ Sent in response to `TALK`.
 ```
 
 The `npc` value is the stable NPC ID; `dialogue` is UTF-8 text encoded as a JSON string.
+
+Implemented: `TALK` accepts an exact NPC ID or a full display name (case-insensitive, without quotes), resolved only in the requester's current room. It returns the NPC's fixed dialogue string (ordered world dialogue lines joined with a newline) privately. Ordinary dialogue has no side effects. A fetch delivery to its local giver replaces the text with completion_dialogue, consumes the owned ingredient, grants the reserved reward and queues ITEM DELIVER/REWARD after OK. The winning username gets an already-complete dialogue on repeat; other users receive reward_unavailable. Full quest progression and combat remain pending. Quotes and newlines inside the dialogue are escaped by JSON encoding. A response exceeding 4,096 bytes including `OK ` and LF returns `ERR response_too_large`. `LOOK` lists NPC descriptors `{id,name,role}` sorted by ID, with `[]` for rooms without NPCs. Roles are `dialogue`, `quest_giver`, or `enemy`.
 
 ---
 
