@@ -43,10 +43,12 @@ Sent in response to the `LOOK` command.
       "role": "dialogue"
     }
   ]
-}
 ```
 
 `room.id`, `room.name`, and `room.description` are strings. `room.exits` maps lowercase directions to room IDs. `players` is an array of usernames in the room, including the requester. `items` is an array of `{id:string,name:string,obtainable:boolean}` objects; `npcs` is an array of `{id:string,name:string,role:string}` objects. Use `[]` for empty lists and `{}` for a room without exits. The detailed descriptors let the GUI render without a separate catalogue request.
+
+> **Design Decision `🟢 VALIDATED (Both Dev A & Dev B)`**:  
+> Detailed descriptor objects are adopted. This allows the GUI client to immediately render button labels, item badges, and tooltips without generating extra network round-trips.
 
 ---
 
@@ -93,7 +95,7 @@ Sent in response to `WHO`.
 
 Sent in response to `INVENTORY`.
 
-### Proposed schema `🔵 IN_REVIEW`
+### Proposed schema `🟢 VALIDATED (Both Dev A & Dev B)`
 
 ```json
 [
@@ -102,7 +104,7 @@ Sent in response to `INVENTORY`.
 ]
 ```
 
-The response is an array of `{id:string,name:string}`. An empty inventory is `OK []`. The GUI sends the `id` from this array for `DROP`. Item-specific attributes such as damage bonus belong to the item model and can be added only through an agreed schema revision.
+The response is an array of `{id:string,name:string}`. An empty inventory is `OK []`. The GUI displays `name` and sends `id` for `DROP`. Item-specific attributes such as damage bonus belong to the item model and can be added through an agreed schema revision.
 
 ---
 

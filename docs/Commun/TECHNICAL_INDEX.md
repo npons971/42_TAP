@@ -40,7 +40,7 @@ To track progress across the codebase and identify pending team decisions, every
 | Document | Focus | Assigned To | Status |
 |---|---|---|---|
 | [cli_client.md](../Dev_A/clients/cli_client.md) | Async terminal I/O, Dual goroutine loops, Command interface choice | Aris (Dev A) | `🔵 IN_REVIEW` |
-| [gui_client.md](../Dev_B/clients/gui_client.md) | Graphical toolkit selection, Reactive state loop, UI views & controls | Novanns (Dev B) | `🔴 TO_FILL` |
+| [gui_client.md](../Dev_B/clients/gui_client.md) | Graphical toolkit selection, Reactive state loop, UI views & controls | Novanns (Dev B) | `🟢 VALIDATED` |
 
 ### 5. Testing & Evaluation (`Commun/testing/`)
 | Document | Focus | Assigned To | Status |
