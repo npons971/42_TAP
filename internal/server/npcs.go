@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// NPC is a static catalogue entry. Combat and quests will add runtime state.
+// NPC is immutable catalogue data; mutable health is stored in Server.npcStates.
 type NPC struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -63,6 +63,9 @@ type npcView struct {
 func (s *Server) roomNPCsLocked(roomID string) []npcView {
 	npcs := make([]npcView, 0)
 	for _, id := range s.world.Locations[roomID].NPCs {
+		if !s.npcAliveLocked(id) {
+			continue
+		}
 		npc := s.world.NPCs[id]
 		npcs = append(npcs, npcView{ID: npc.ID, Name: npc.Name, Role: npc.Role})
 	}
@@ -71,6 +74,10 @@ func (s *Server) roomNPCsLocked(roomID string) []npcView {
 }
 
 func (s *Server) talk(c *client, target string, hasArgs bool) bool {
+	return s.talkReply(c, target, hasArgs, false)
+}
+
+func (s *Server) talkReply(c *client, target string, hasArgs, details bool) bool {
 	if !hasArgs || strings.TrimSpace(target) == "" {
 		return sendError(c, "invalid_arguments", "Usage: TALK <npc_id or full display name>")
 	}
@@ -83,29 +90,18 @@ func (s *Server) talk(c *client, target string, hasArgs bool) bool {
 		return notAuthenticated(c, "TALK")
 	}
 	roomID := c.roomID
-	var match NPC
-	// An exact ID takes precedence over display names, as with TAKE and DROP.
-	for _, id := range s.world.Locations[roomID].NPCs {
-		if id == target {
-			match = s.world.NPCs[id]
-			break
-		}
+	if c.target != "" {
+		return sendError(c, "in_combat", "TALK is unavailable in combat; use FLEE")
 	}
-	if match.ID == "" {
-		for _, id := range s.world.Locations[roomID].NPCs {
-			npc := s.world.NPCs[id]
-			if strings.EqualFold(npc.Name, target) {
-				if match.ID != "" {
-					return sendError(c, "invalid_arguments", "TALK name matches multiple NPCs; use an NPC ID")
-				}
-				match = npc
-			}
-		}
+	match, ambiguous := s.resolveNPCLocked(roomID, target)
+	if ambiguous {
+		return sendError(c, "invalid_arguments", "TALK name matches multiple NPCs; use an NPC ID")
 	}
 	if match.ID == "" {
 		return sendError(c, "target_not_found", fmt.Sprintf("TALK target %q is not in %s; use LOOK", shortVerb(target), roomID))
 	}
-	def := s.deliveryLocked(c, match.ID)
+	s.logger.Info("NPC interaction", "player", c.username, "npc", match.ID)
+	def := s.questForNPCLocked(match.ID)
 	delivering := false
 	if def != nil {
 		if winner := s.rewardClaims[def.ID]; winner != "" {
@@ -113,9 +109,12 @@ func (s *Server) talk(c *client, target string, hasArgs bool) bool {
 				return sendError(c, "reward_unavailable", "TALK reward for "+def.ID+" has already been awarded in this world")
 			}
 			match.Dialogue = "This delivery is already complete; its unique reward has been awarded."
-		} else if s.itemLocations[def.TargetItem].owner == c {
+		} else if s.objectiveLocked(c, *def) {
 			if !s.rewardAvailableLocked(*def) {
 				return sendError(c, "reward_unavailable", "TALK reward for "+def.ID+" is no longer in reserve")
+			}
+			if def.Type != "fetch_and_deliver" && s.inventoryCountLocked(c) >= maxInventoryItems {
+				return sendError(c, "inventory_full", "TALK reward requires an inventory slot; use DROP and talk again")
 			}
 			delivering = true
 			match.Dialogue = def.Dialogue
@@ -128,16 +127,29 @@ func (s *Server) talk(c *client, target string, hasArgs bool) bool {
 	if err != nil {
 		return sendError(c, "internal_error", "TALK response could not be encoded")
 	}
-	if len(payload)+4 > maxLineBytes {
+	reply := "OK " + strings.Join(strings.Fields(match.Dialogue), " ")
+	if details {
+		reply = "OK " + string(payload)
+	}
+	if len(reply)+1 > maxLineBytes {
 		return sendError(c, "response_too_large", "TALK response exceeds 4096-byte line limit")
 	}
-	if !queue(c.outbox, "OK "+string(payload)) {
+	if !queue(c.outbox, reply) {
 		return false
 	}
+	if def != nil {
+		s.progressLocked(c.username).Started[def.ID] = true
+		s.logger.Info("quest started or discussed", "player", c.username, "quest", def.ID, "npc", match.ID)
+	}
 	if delivering {
-		s.itemLocations[def.TargetItem] = itemLocation{consumed: true}
+		if def.Type == "fetch_and_deliver" {
+			s.itemLocations[def.TargetItem] = itemLocation{consumed: true}
+		}
 		s.grantRewardLocked(c, *def)
-		s.broadcastItemLocked(c.roomID, "DELIVER", c.username, def.TargetItem)
+		if def.Type == "fetch_and_deliver" {
+			s.broadcastItemLocked(c.roomID, "DELIVER", c.username, def.TargetItem)
+		}
+		s.logger.Info("quest completed", "player", c.username, "quest", def.ID, "reward", def.RewardItem)
 		s.broadcastItemLocked(c.roomID, "REWARD", c.username, def.RewardItem)
 	}
 	return true

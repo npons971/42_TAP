@@ -1,70 +1,36 @@
-# Server Logging & Security Monitoring
+# Server logging and abuse monitoring — implemented
 
-> **Document Status**: `🔵 IN_REVIEW`  
-> **Assigned to**: Aris (Dev A)  
-> **Last Updated**: 2026-10-07
+The server uses a standard `log/slog` JSON handler. Entries have RFC3339 timestamps,
+INFO/WARN/ERROR levels and one JSON object per line. Default output is stdout.
+`-log-file path` appends to a file opened with mode 0600; startup failures are
+reported and exit nonzero. Log files are deployment output, not repository data.
 
-The 42 subject mandates comprehensive, structured server logging and abuse pattern detection. This document specifies the JSON logging schema, log levels, audit trails, and anti-flood protections.
+Logged information:
 
----
+- Connection/disconnection: remote IP/port, player and session duration.
+- COMMAND_RECEIVED: player, remote address, verb and complete remaining arguments.
+- SERVER_RESPONSE: every written OK/ERR/EVT, recipient, remote address, response
+  text and error_code for ERR. Socket failures use ERROR.
+- State changes: room/item movement, consumption, NPC interaction, group joins
+  and departures, combat turns, quest start/objective/completion.
+- WARN: invalid frames, full output queues, command flood and rapid connections.
 
-## 1. Structured Logging Schema (JSON)
+The command token bucket is per connection: burst **128**, refill **20/s**.
+The larger burst accommodates startup refreshes and scripted clients; sustained
+flooding receives `ERR 429 RATE_LIMITED Command flood detected; connection closing`
+and closes the session, releasing combat/groups and dropping held objects.
+Malformed frames also count toward this limit.
 
-All logs are emitted as single-line JSON objects to standard output (or log file) using standard Go logging (`log/slog` or custom JSON encoder).
+Connection monitoring warns after more than **5 connections from one IP in
+2 seconds**. Old windows expire, and at most 1024 IP windows are stored. This
+monitor does not ban an IP, since multiple users can share a school/NAT address.
 
-### Standard Fields
-```json
-{
-  "timestamp": "2026-10-07T13:45:00.123Z",
-  "level": "INFO",
-  "event": "COMMAND_RECEIVED",
-  "client_ip": "192.168.1.42:54321",
-  "player": "alice",
-  "command": "MOVE",
-  "params": ["north"],
-  "response": "OK room=loc.market",
-  "duration_ms": 0.42
-}
-```
+Broadcasts only enqueue to bounded client channels. Socket writes and response
+logging happen in each client's dedicated writer; network operations never
+hold the shared state lock. The logger writes to a local output stream; select
+a suitable file or consuming stdout reader when running the server.
 
----
-
-## 2. Event Types & Log Levels
-
-| Log Level | Event Category | Mandatory Logged Information |
-|---|---|---|
-| `INFO` | `CLIENT_CONNECT` | Client IP, port, connection timestamp |
-| `INFO` | `CLIENT_DISCONNECT` | Client IP, player name, session duration, graceful vs abrupt |
-| `INFO` | `COMMAND_EXECUTED` | Player, command verb, parameters, reply (`OK`/`ERR`) |
-| `INFO` | `STATE_CHANGE` | Item taken/dropped, room changes, quest stage advancement |
-| `INFO` | `COMBAT_EVENT` | Combat initiated, attacker, target, damage, death, respawn |
-| `WARN` | `ABUSE_FLOOD` | Rate limit exceeded, client IP, player, command count |
-| `WARN` | `RAPID_RECONNECT` | Multiple connections within brief threshold from same IP |
-| `ERROR` | `INTERNAL_ERROR` | World data parsing failure, socket write failures |
-
----
-
-## 3. Abuse Pattern Detection & Throttling `🔴 TO_FILL`
-
-### 3.1 Command Flooding Detection
-- **Mechanism**: Token Bucket or Sliding Window rate limiter per client connection.
-- **Proposed Threshold `🔴 TO_FILL`**:
-  - Maximum **20 commands per second** per socket.
-  - Burst capacity: 30 tokens.
-- **Action upon trigger**:
-  - Respond with: `ERR rate_limited Slow down, command flood detected\n`.
-  - Emit log:
-    ```json
-    {
-      "timestamp": "2026-10-07T13:45:01.000Z",
-      "level": "WARN",
-      "event": "ABUSE_FLOOD",
-      "client_ip": "192.168.1.42:54321",
-      "player": "alice",
-      "msg": "Exceeded rate limit (25 req/s)"
-    }
-    ```
-
-### 3.2 Rapid Reconnections Monitor
-- Track connection timestamps per client IP.
-- If an IP initiates more than 5 connections in 2 seconds, emit a `WARN RAPID_RECONNECT` log and throttle connection accept.
+Tests check the burst/refill/cap deterministically and inspect structured TCP
+logs after all writers stop, including command arguments, responses, error
+codes, timestamps, interactions and rapid-connection warnings. A TCP flood test verifies that only the abusive
+session closes while a second client remains usable.

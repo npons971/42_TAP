@@ -31,7 +31,7 @@ func TestDeliveryRewardsTCPAndReconnect(t *testing.T) {
 	expectLine(t, ar, "OK taken=item.rare_herbs")
 	expectLine(t, ar, "EVT ROOM ITEM TAKE alice item.rare_herbs")
 	expectLine(t, br, "EVT ROOM ITEM TAKE alice item.rare_herbs")
-	sendCommand(t, bob, "TALK npc.herbalist")
+	sendCommand(t, bob, "TALKJSON npc.herbalist")
 	var reply struct {
 		NPC      string `json:"npc"`
 		Dialogue string `json:"dialogue"`
@@ -43,15 +43,15 @@ func TestDeliveryRewardsTCPAndReconnect(t *testing.T) {
 	sendCommand(t, alice, "MOVE south")
 	expectLine(t, ar, "OK room=loc.town_square")
 	expectLine(t, br, "EVT ROOM PRESENCE LEAVE alice")
-	sendCommand(t, alice, "TALK npc.herbalist")
-	expectLine(t, ar, `ERR target_not_found TALK target "npc.herbalist" is not in loc.town_square; use LOOK`)
+	sendCommand(t, alice, "TALKJSON npc.herbalist")
+	expectLine(t, ar, `ERR 404 NPC_NOT_FOUND TALK target "npc.herbalist" is not in loc.town_square; use LOOK`)
 	sendCommand(t, alice, "MOVE north")
 	expectLine(t, ar, "OK room=loc.garden")
 	expectLine(t, br, "EVT ROOM PRESENCE ENTER alice")
 	s.mu.Lock()
 	s.players["alice"].hp = 15
 	s.mu.Unlock()
-	sendCommand(t, alice, "TALK VILLAGE HERBALIST")
+	sendCommand(t, alice, "TALKJSON VILLAGE HERBALIST")
 	readWorldReply(t, ar, &reply)
 	if reply.Dialogue != s.world.Rewards["quest.herbal_cure"].Dialogue {
 		t.Fatalf("wrong completion reply: %+v", reply)
@@ -62,20 +62,20 @@ func TestDeliveryRewardsTCPAndReconnect(t *testing.T) {
 		expectLine(t, br, want)
 	}
 	sendCommand(t, alice, "STATUS")
-	expectLine(t, ar, `OK {"player":"alice","hp":100,"max_hp":100,"state":"HORS_COMBAT","combat":null}`)
-	sendCommand(t, alice, "INVENTORY")
+	expectLine(t, ar, `OK {"status":"healthy","player":"alice","hp":100,"max_hp":100,"state":"HORS_COMBAT","combat":null}`)
+	sendCommand(t, alice, "INVENTORY DETAILS")
 	expectLine(t, ar, `OK [{"id":"item.vigor_potion","name":"Vigor Potion"}]`)
-	sendCommand(t, alice, "TALK npc.herbalist")
+	sendCommand(t, alice, "TALKJSON npc.herbalist")
 	readWorldReply(t, ar, &reply)
 	if !strings.Contains(reply.Dialogue, "already complete") {
 		t.Fatal("delivery replay not identified")
 	}
-	sendCommand(t, bob, "TALK npc.herbalist")
-	expectLine(t, br, "ERR reward_unavailable TALK reward for quest.herbal_cure has already been awarded in this world")
+	sendCommand(t, bob, "TALKJSON npc.herbalist")
+	expectLine(t, br, "ERR 406 NO_QUEST_AVAILABLE TALK reward for quest.herbal_cure has already been awarded in this world")
 	sendCommand(t, bob, "TAKE item.rare_herbs")
-	expectLine(t, br, `ERR item_not_found TAKE target "item.rare_herbs" is not in loc.garden; use LOOK`)
+	expectLine(t, br, `ERR 404 ITEM_NOT_FOUND TAKE target "item.rare_herbs" is not in loc.garden; use LOOK`)
 	sendCommand(t, alice, "USE Vigor Potion")
-	expectLine(t, ar, "ERR health_full USE cannot restore HP: health is already full; item kept")
+	expectLine(t, ar, "ERR 409 HEALTH_FULL USE cannot restore HP: health is already full; item kept")
 	s.mu.Lock()
 	s.players["alice"].hp = 1
 	s.mu.Unlock()
@@ -85,7 +85,7 @@ func TestDeliveryRewardsTCPAndReconnect(t *testing.T) {
 	expectLine(t, br, "EVT ROOM ITEM USE alice item.vigor_potion")
 	_ = alice.Close()
 	expectLine(t, br, "EVT ROOM PRESENCE LEAVE alice")
-	sendCommand(t, bob, "LOOK")
+	sendCommand(t, bob, "LOOK DETAILS")
 	expectRoomItems(t, br, []string{})
 	again, rr := dialTestClient(t, addr)
 	sendCommand(t, again, "CONNECT alice")
@@ -93,12 +93,12 @@ func TestDeliveryRewardsTCPAndReconnect(t *testing.T) {
 	sendCommand(t, again, "MOVE north")
 	expectLine(t, rr, "OK room=loc.garden")
 	expectLine(t, br, "EVT ROOM PRESENCE ENTER alice")
-	sendCommand(t, again, "TALK npc.herbalist")
+	sendCommand(t, again, "TALKJSON npc.herbalist")
 	readWorldReply(t, rr, &reply)
 	if !strings.Contains(reply.Dialogue, "already complete") {
 		t.Fatal("reconnect bypassed world claim")
 	}
-	sendCommand(t, again, "INVENTORY")
+	sendCommand(t, again, "INVENTORY DETAILS")
 	expectLine(t, rr, "OK []")
 	fresh := New(nil, s.world)
 	if !fresh.itemLocations["item.vigor_potion"].reserved || fresh.itemLocations["item.rare_herbs"].roomID != "loc.garden" || len(fresh.rewardClaims) != 0 {
@@ -139,7 +139,7 @@ func TestDeliveryFailuresAreAtomic(t *testing.T) {
 				s.itemLocations[def.RewardItem] = itemLocation{roomID: c.roomID}
 			}
 			before, exists := s.itemLocations[def.RewardItem]
-			alive := s.talk(c, "npc.herbalist", true)
+			alive := s.talkReply(c, "npc.herbalist", true, true)
 			if c.hp != 12 || s.itemLocations[def.TargetItem].owner != c || len(s.rewardClaims) != 0 {
 				t.Fatal("failed delivery mutated player or herbs")
 			}
@@ -153,10 +153,10 @@ func TestDeliveryFailuresAreAtomic(t *testing.T) {
 					t.Fatal("full queue accepted delivery")
 				}
 			} else if kind == "response_too_large" {
-				if !strings.HasPrefix(got, "ERR response_too_large ") {
+				if !strings.HasPrefix(got, "ERR 413 RESPONSE_TOO_LARGE ") {
 					t.Fatal(got)
 				}
-			} else if !strings.HasPrefix(got, "ERR reward_unavailable ") {
+			} else if !strings.HasPrefix(got, "ERR 406 NO_QUEST_AVAILABLE ") {
 				t.Fatal(got)
 			}
 		})
@@ -169,7 +169,7 @@ func TestConcurrentDeliveryAndRewardClaims(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
-		go func() { defer wg.Done(); <-start; s.talk(c, "npc.herbalist", true) }()
+		go func() { defer wg.Done(); <-start; s.talkReply(c, "npc.herbalist", true, true) }()
 	}
 	close(start)
 	wg.Wait()
@@ -185,7 +185,7 @@ func TestConcurrentDeliveryAndRewardClaims(t *testing.T) {
 	if completed != 1 {
 		t.Fatalf("completion count=%d", completed)
 	}
-	// Allocation engine is also tested for the future combat reward.
+	// Independently exercise concurrent allocation of the combat reward.
 	def = s.world.Rewards["quest.bandit_bounty"]
 	start = make(chan struct{})
 	results := make(chan bool, 2)
@@ -219,7 +219,7 @@ func TestConcurrentDeliveryAndRewardClaims(t *testing.T) {
 
 func TestDeliveredRewardCanBeDroppedAndTransferred(t *testing.T) {
 	s, c, def := rewardTestState(t)
-	s.talk(c, "npc.herbalist", true)
+	s.talkReply(c, "npc.herbalist", true, true)
 	<-c.outbox
 	s.transferItem(c, "DROP", def.RewardItem, true)
 	<-c.outbox
@@ -298,7 +298,7 @@ func TestRewardDisconnectReturnsOnlyUnconsumedReward(t *testing.T) {
 	expectLine(t, ar, "OK taken=item.rare_herbs")
 	expectLine(t, ar, "EVT ROOM ITEM TAKE alice item.rare_herbs")
 	expectLine(t, br, "EVT ROOM ITEM TAKE alice item.rare_herbs")
-	sendCommand(t, alice, "TALK npc.herbalist")
+	sendCommand(t, alice, "TALKJSON npc.herbalist")
 	var response map[string]any
 	readWorldReply(t, ar, &response)
 	for _, action := range []struct{ verb, id string }{{"DELIVER", "item.rare_herbs"}, {"REWARD", "item.vigor_potion"}} {
@@ -309,13 +309,13 @@ func TestRewardDisconnectReturnsOnlyUnconsumedReward(t *testing.T) {
 	_ = alice.Close()
 	expectLine(t, br, "EVT ROOM ITEM DROP alice item.vigor_potion")
 	expectLine(t, br, "EVT ROOM PRESENCE LEAVE alice")
-	sendCommand(t, bob, "LOOK")
+	sendCommand(t, bob, "LOOK DETAILS")
 	expectRoomItems(t, br, []string{"item.vigor_potion"})
 	sendCommand(t, bob, "TAKE item.vigor_potion")
 	expectLine(t, br, "OK taken=item.vigor_potion")
 	expectLine(t, br, "EVT ROOM ITEM TAKE bob item.vigor_potion")
-	sendCommand(t, bob, "TALK npc.herbalist")
-	expectLine(t, br, "ERR reward_unavailable TALK reward for quest.herbal_cure has already been awarded in this world")
+	sendCommand(t, bob, "TALKJSON npc.herbalist")
+	expectLine(t, br, "ERR 406 NO_QUEST_AVAILABLE TALK reward for quest.herbal_cure has already been awarded in this world")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if !s.itemLocations["item.rare_herbs"].consumed || s.itemLocations["item.vigor_potion"].owner != s.players["bob"] {

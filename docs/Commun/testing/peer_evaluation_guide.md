@@ -50,7 +50,7 @@ Follow this precise sequence to demonstrate all mandatory features efficiently:
 ### Step 4: Item Dynamics (Unicité & Multi-Word Names)
 1. In `loc.tavern`, pick up the ale: `TAKE Frothy Ale` (or `item.ale`).
 2. Show that the item disappears from room view immediately on both CLI and GUI.
-3. Attempt to pick it up with `bob`: verify `ERR item_not_found`.
+3. Attempt to pick it up with `bob`: verify `ERR 404 ITEM_NOT_FOUND`.
 4. Drop it with `alice`: `DROP Frothy Ale`.
 5. Show that `bob`'s GUI automatically reflects the reappearance of the item.
 

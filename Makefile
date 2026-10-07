@@ -1,7 +1,8 @@
-.PHONY: install clean build-server run-server test-server
+.PHONY: install clean build-server run-server test-server build-cli run-cli test test-cli-pty test-gui
 
 SERVER_ADDR ?= :4242
 WORLD_FILE ?= data/world.json
+CLI_ADDR ?= 127.0.0.1:4242
 export GOPATH := $(CURDIR)/.go-work
 export GOCACHE := $(CURDIR)/.go-cache
 
@@ -14,6 +15,24 @@ run-server: go
 
 test-server: go
 	./go test -race ./internal/server
+
+build-cli: go
+	mkdir -p .build
+	./go build -o .build/tap-cli ./cmd/client-cli
+
+run-cli: go
+	./go run ./cmd/client-cli -addr "$(CLI_ADDR)"
+
+test: go
+	./go test -race ./...
+
+test-gui: go npm
+	cd Project/client-gui && ../../go test -race app.go app_test.go
+	cd Project/client-gui/frontend && ../../../npm run build
+	./node scripts/test-gui-protocol.mjs
+
+test-cli-pty: build-cli
+	python3 scripts/test-cli-pty.py
 
 install: go npm wails .webkit-sdk/.installed
 

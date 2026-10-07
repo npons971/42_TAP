@@ -19,15 +19,15 @@ func TestTalkAndLookAcrossRooms(t *testing.T) {
 	defer func() { cancel(); <-done }()
 	alice, ar := dialTestClient(t, addr)
 	bob, br := dialTestClient(t, addr)
-	sendCommand(t, alice, "TALK npc.guard")
-	expectLine(t, ar, "ERR not_authenticated Send CONNECT <username> before TALK")
+	sendCommand(t, alice, "TALKJSON npc.guard")
+	expectLine(t, ar, "ERR 403 NOT_AUTHENTICATED Send CONNECT <username> before TALK")
 	sendCommand(t, alice, "CONNECT alice")
 	expectLine(t, ar, "OK connected")
 	sendCommand(t, bob, "CONNECT bob")
 	expectLine(t, br, "OK connected")
 	expectLine(t, ar, "EVT ROOM PRESENCE ENTER bob")
-	sendCommand(t, alice, "LOOK")
-	line, err := ar.ReadString('\n')
+	sendCommand(t, alice, "LOOK DETAILS")
+	line, err := readTestLine(ar)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,21 +44,21 @@ func TestTalkAndLookAcrossRooms(t *testing.T) {
 		t.Fatal("LOOK exposed dialogue instead of descriptors only")
 	}
 	for _, target := range []string{"npc.guard", "GARDE DU VILLAGE"} {
-		sendCommand(t, alice, "TALK "+target)
+		sendCommand(t, alice, "TALKJSON "+target)
 		expectLine(t, ar, `OK {"npc":"npc.guard","dialogue":"Restez sur vos gardes, voyageur."}`)
 	}
 	// A subsequent reply must be first in Bob's stream: TALK has no broadcast.
-	sendCommand(t, bob, "WHO")
+	sendCommand(t, bob, "WHO DETAILS")
 	expectLine(t, br, `OK {"room":["alice","bob"],"server":2}`)
 	for _, tc := range []struct{ command, want string }{
-		{"TALK", "ERR invalid_arguments Usage: TALK <npc_id or full display name>"},
-		{"TALK   ", "ERR invalid_arguments Usage: TALK <npc_id or full display name>"},
-		{"TALK npc.guard ", "ERR invalid_arguments TALK target must not contain tabs or surrounding spaces"},
-		{"TALK Garde\tdu Village", "ERR invalid_arguments TALK target must not contain tabs or surrounding spaces"},
-		{"TALK npc.missing", `ERR target_not_found TALK target "npc.missing" is not in loc.town_square; use LOOK`},
-		{"TALK npc.herbalist", `ERR target_not_found TALK target "npc.herbalist" is not in loc.town_square; use LOOK`},
-		{"TALK Garde", `ERR target_not_found TALK target "Garde" is not in loc.town_square; use LOOK`},
-		{"TALK NPC.GUARD", `ERR target_not_found TALK target "NPC.GUARD" is not in loc.town_square; use LOOK`},
+		{"TALK", "ERR 400 INVALID_ARGUMENTS Usage: TALK <npc_id or full display name>"},
+		{"TALK   ", "ERR 400 INVALID_ARGUMENTS Usage: TALK <npc_id or full display name>"},
+		{"TALK npc.guard ", "ERR 400 INVALID_ARGUMENTS TALK target must not contain tabs or surrounding spaces"},
+		{"TALK Garde\tdu Village", "ERR 400 INVALID_ARGUMENTS TALK target must not contain tabs or surrounding spaces"},
+		{"TALK npc.missing", `ERR 404 NPC_NOT_FOUND TALK target "npc.missing" is not in loc.town_square; use LOOK`},
+		{"TALK npc.herbalist", `ERR 404 NPC_NOT_FOUND TALK target "npc.herbalist" is not in loc.town_square; use LOOK`},
+		{"TALK Garde", `ERR 404 NPC_NOT_FOUND TALK target "Garde" is not in loc.town_square; use LOOK`},
+		{"TALK NPC.GUARD", `ERR 404 NPC_NOT_FOUND TALK target "NPC.GUARD" is not in loc.town_square; use LOOK`},
 	} {
 		sendCommand(t, alice, tc.command)
 		expectLine(t, ar, tc.want)
@@ -66,11 +66,11 @@ func TestTalkAndLookAcrossRooms(t *testing.T) {
 	sendCommand(t, alice, "MOVE north")
 	expectLine(t, ar, "OK room=loc.garden")
 	expectLine(t, br, "EVT ROOM PRESENCE LEAVE alice")
-	sendCommand(t, alice, "TALK npc.guard")
-	expectLine(t, ar, `ERR target_not_found TALK target "npc.guard" is not in loc.garden; use LOOK`)
-	sendCommand(t, alice, "TALK rat géant")
+	sendCommand(t, alice, "TALKJSON npc.guard")
+	expectLine(t, ar, `ERR 404 NPC_NOT_FOUND TALK target "npc.guard" is not in loc.garden; use LOOK`)
+	sendCommand(t, alice, "TALKJSON rat géant")
 	expectLine(t, ar, `OK {"npc":"npc.giant_rat","dialogue":"Le rat grince des dents en vous regardant."}`)
-	sendCommand(t, alice, "TALK Herboriste")
+	sendCommand(t, alice, "TALKJSON Herboriste")
 	expectLine(t, ar, `OK {"npc":"npc.herbalist","dialogue":"Bonjour aventurier. Auriez-vous un instant pour m’aider ?"}`)
 }
 
@@ -84,11 +84,11 @@ func TestTalkAmbiguityAndLineLimit(t *testing.T) {
 	}}
 	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), world)
 	c := &client{username: "alice", roomID: "loc.square", outbox: make(chan string, 16)}
-	s.talk(c, "garde", true)
-	if got := <-c.outbox; got != "ERR invalid_arguments TALK name matches multiple NPCs; use an NPC ID" {
+	s.talkReply(c, "garde", true, true)
+	if got := <-c.outbox; got != "ERR 400 INVALID_ARGUMENTS TALK name matches multiple NPCs; use an NPC ID" {
 		t.Fatalf("ambiguity: %s", got)
 	}
-	s.talk(c, "npc.guard_1", true)
+	s.talkReply(c, "npc.guard_1", true, true)
 	if got := <-c.outbox; got != `OK {"npc":"npc.guard_1","dialogue":"Bonjour"}` {
 		t.Fatalf("ID resolution: %s", got)
 	}
@@ -103,19 +103,19 @@ func TestTalkAmbiguityAndLineLimit(t *testing.T) {
 	npc := world.NPCs["npc.guard_1"]
 	npc.Dialogue = "é\"\n"
 	world.NPCs[npc.ID] = npc
-	s.talk(c, npc.ID, true)
+	s.talkReply(c, npc.ID, true, true)
 	prefix := <-c.outbox
 	padding := maxLineBytes - len(prefix) - 1
 	npc.Dialogue += strings.Repeat("x", padding)
 	world.NPCs[npc.ID] = npc
-	s.talk(c, npc.ID, true)
+	s.talkReply(c, npc.ID, true, true)
 	if got := <-c.outbox; !strings.HasPrefix(got, "OK ") || len(got)+1 != maxLineBytes {
 		t.Fatalf("exact limit rejected: %d bytes, %s", len(got)+1, shortVerb(got))
 	}
 	npc.Dialogue += "x"
 	world.NPCs[npc.ID] = npc
-	s.talk(c, npc.ID, true)
-	if got := <-c.outbox; got != "ERR response_too_large TALK response exceeds 4096-byte line limit" {
+	s.talkReply(c, npc.ID, true, true)
+	if got := <-c.outbox; got != "ERR 413 RESPONSE_TOO_LARGE TALK response exceeds 4096-byte line limit" {
 		t.Fatalf("oversized dialogue: %s", got)
 	}
 }

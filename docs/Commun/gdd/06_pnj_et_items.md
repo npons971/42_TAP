@@ -11,9 +11,9 @@ Le sujet requiert au minimum **3 rôles distincts** de PNJ. Notre univers en pro
 2. **Donneur de quête (Quest-giver)** : confient des missions et valident les étapes de progression.
 3. **Ennemi hostile (Combat)** : peuvent être engagés au combat via `ATTACK`.
 
-**État de l'implémentation :** le serveur charge le monde complet du Dev B depuis `data/world.json`. `LOOK` affiche les PNJ de la salle et `TALK` renvoie toutes leurs répliques dans l'ordre, jointes par un saut de ligne échappé dans la réponse JSON. Les rôles sont `dialogue`, `quest_giver` et `enemy`. Les livraisons et récompenses uniques sont actives ; la progression complète et le combat seront implémentés ensuite ; les statistiques ci-dessous sont les valeurs initiales chargées, sans effet de combat actuellement.
+**État de l'implémentation :** le serveur charge le monde complet du Dev B depuis `data/world.json`. `LOOK` affiche les PNJ de la salle et `TALK` renvoie toutes leurs répliques dans l'ordre, jointes par un saut de ligne échappé dans la réponse JSON. Les rôles sont `dialogue`, `quest_giver` et `enemy`. Les livraisons, les récompenses uniques, la progression et le combat sont actifs ; les statistiques ci-dessous sont les valeurs initiales chargées.
 
-`TALK npc.guard` et `TALK Village Guard` sont équivalents. Les noms complets sont acceptés sans guillemets et sans tenir compte de la casse. Seuls les PNJ de la salle actuelle sont accessibles : une cible inconnue ou ailleurs produit `ERR target_not_found`, un nom ambigu produit `ERR invalid_arguments` avec une invitation à utiliser l'ID. La réponse conserve le format `OK {"npc":"npc.guard","dialogue":"..."}` et est envoyée uniquement au joueur qui parle. Les noms affichés ci-dessous sont ceux du monde actif, en anglais.
+`TALK npc.guard` et `TALK Village Guard` sont équivalents. Les noms complets sont acceptés sans guillemets et sans tenir compte de la casse. Seuls les PNJ de la salle actuelle sont accessibles : une cible inconnue ou ailleurs produit `ERR 404 NPC_NOT_FOUND`, un nom ambigu produit `ERR 400 INVALID_ARGUMENTS` avec une invitation à utiliser l'ID. La réponse standard est `OK <texte du dialogue>` ; l’extension `TALKJSON` renvoie `OK {"npc":"npc.guard","dialogue":"..."}` et est envoyée uniquement au joueur qui parle. Les noms affichés ci-dessous sont ceux du monde actif, en anglais.
 
 ### Bestiaire & Annuaire des PNJ
 
@@ -41,7 +41,7 @@ Le sujet requiert au minimum **3 rôles distincts** de PNJ. Notre univers en pro
   - `DROP` le replace dans la pièce où se tient le joueur.
   - Aucune duplication possible.
 - Support complet des noms composés de plusieurs mots (ex: `Rare Herbs`, `Rusty Sword`).
-- Résolution par ID technique (ex: `item.rare_herbs`) ou par nom affiché complet sans tenir compte de la casse. Si plusieurs objets du même contexte ont le même nom affiché, le serveur répond par exemple `ERR invalid_arguments TAKE name matches multiple items; use an item ID` ; les clients envoient de préférence l'ID unique.
+- Résolution par ID technique (ex: `item.rare_herbs`) ou par nom affiché complet sans tenir compte de la casse. Si plusieurs objets du même contexte ont le même nom affiché, le serveur répond par exemple `ERR 400 INVALID_ARGUMENTS TAKE name matches multiple items; use an item ID` ; les clients envoient de préférence l'ID unique.
 
 ### Catalogue des Objets
 
@@ -58,7 +58,7 @@ Le sujet requiert au minimum **3 rôles distincts** de PNJ. Notre univers en pro
 | `item.ancient_key` | Ancient Key | Réserve de quête | Oui | quest_reward |
 | `item.vigor_potion` | Vigor Potion | Réserve de quête | Oui | consumable ; Soin : 100 |
 
-Les soins des consommables sont actifs via `USE`. Les herbes sont consommées par la livraison via `TALK`. Les bonus de combat attendent le moteur de combat. Les objets réservés ne sont pas affichés au sol et ne peuvent pas être pris tant qu’ils ne sont pas attribués. Un objet doit avoir un placement unique : une salle ou `initial_location: {"kind":"reserve"}`, jamais les deux.
+Les soins des consommables sont actifs via `USE`. Les herbes sont consommées par la livraison via `TALK`. Le combat applique le meilleur bonus d’attaque et de défense porté, sans cumul. Les objets réservés ne sont pas affichés au sol et ne peuvent pas être pris tant qu’ils ne sont pas attribués. Un objet doit avoir un placement unique : une salle ou `initial_location: {"kind":"reserve"}`, jamais les deux.
 
 ---
 
@@ -67,11 +67,11 @@ Les soins des consommables sont actifs via `USE`. Les herbes sont consommées pa
 - `LOOK` : liste les objets présents au sol dans la pièce ainsi que les PNJ.
 - `TAKE <objet>` :
   - Si l'objet est `obtainable: true` : retiré du sol, placé dans l'inventaire -> `OK taken=item.<id>`
-  - Si l'objet est `obtainable: false` : refusé -> `ERR item_not_obtainable`
-  - Si l'objet n'existe pas : `ERR item_not_found`
+  - Si l'objet est `obtainable: false` : refusé -> `ERR 405 ITEM_NOT_OBTAINABLE`
+  - Si l'objet n'existe pas : `ERR 404 ITEM_NOT_FOUND`
 - `DROP <objet>` :
   - Si présent dans l'inventaire : retiré de l'inventaire, placé au sol -> `OK dropped=item.<id>`
-  - Si absent de l'inventaire : `ERR not_in_inventory`
+  - Si absent de l'inventaire : `ERR 404 ITEM_NOT_IN_INVENTORY`
 - `INVENTORY` : retourne la liste exhaustive des objets actuellement possédés, sous la forme `OK [{"id":"item.apple","name":"Fresh Apple"}]` ([schéma JSON partagé](../protocol/json_payloads.md)).
 
 ### USE et consommation

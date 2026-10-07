@@ -8,49 +8,64 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"net"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
 const (
-	maxLineBytes = 4096 // Includes LF, as documented in the protocol proposal.
-	outboxSize   = 128
-	writeTimeout = 5 * time.Second
-	maxPlayerHP  = 100
+	maxLineBytes      = 4096 // Includes LF, as documented in the protocol proposal.
+	outboxSize        = 128
+	writeTimeout      = 5 * time.Second
+	maxPlayerHP       = 100
+	maxConnections    = 128
+	maxInventoryItems = 32
 )
 
 var (
-	errLineTooLong  = errors.New("line too long")
-	errInvalidUTF8  = errors.New("invalid UTF-8")
-	errEmptyLine    = errors.New("empty line")
-	errCRInLine     = errors.New("carriage return in line")
-	usernamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{2,19}$`)
+	errLineTooLong   = errors.New("line too long")
+	errInvalidUTF8   = errors.New("invalid UTF-8")
+	errEmptyLine     = errors.New("empty line")
+	errControlInLine = errors.New("control character in line")
+	errCRInLine      = errors.New("carriage return in line")
+	usernamePattern  = regexp.MustCompile(`^[\p{Ll}][\p{Ll}\p{Nd}_]{2,19}$`)
 )
 
 type client struct {
-	conn       net.Conn
-	outbox     chan string
-	writerDone chan struct{}
-	username   string // Protected by Server.mu.
-	roomID     string // Protected by Server.mu.
-	hp         int    // Protected by Server.mu.
+	conn        net.Conn
+	outbox      chan string
+	writerDone  chan struct{}
+	connectedAt time.Time
+	username    string // Protected by Server.mu.
+	roomID      string // Protected by Server.mu.
+	hp          int    // Protected by Server.mu.
+	target      string
+	group       string
 }
 
 // Server owns the connected-player state. World data is immutable after load.
 type Server struct {
-	logger        *slog.Logger
-	world         *World
-	mu            sync.RWMutex
-	clients       map[net.Conn]*client
-	players       map[string]*client
-	itemLocations map[string]itemLocation // One authoritative location per instance.
-	rewardClaims  map[string]string       // Quest ID -> winning username, protected by mu.
-	wg            sync.WaitGroup
+	logger            *slog.Logger
+	world             *World
+	mu                sync.RWMutex
+	clients           map[net.Conn]*client
+	players           map[string]*client
+	itemLocations     map[string]itemLocation // One authoritative location per instance.
+	rewardClaims      map[string]string       // Quest ID -> winning username, protected by mu.
+	groups            map[string]map[*client]bool
+	groupLeaders      map[string]string
+	nextGroup         uint64
+	npcStates         map[string]*npcState
+	questProgress     map[string]*questProgress
+	connectionHistory map[string]connectionWindow
+	fleeRoll          func() int
+	wg                sync.WaitGroup
 }
 
 func New(logger *slog.Logger, world *World) *Server {
@@ -63,6 +78,13 @@ func New(logger *slog.Logger, world *World) *Server {
 		players:       make(map[string]*client),
 		itemLocations: make(map[string]itemLocation),
 		rewardClaims:  make(map[string]string),
+		groups:        map[string]map[*client]bool{}, npcStates: map[string]*npcState{}, questProgress: map[string]*questProgress{}, fleeRoll: func() int { return rand.Intn(100) },
+		connectionHistory: map[string]connectionWindow{}, groupLeaders: map[string]string{},
+	}
+	for id, npc := range world.NPCs {
+		if npc.Role == "enemy" {
+			s.npcStates[id] = &npcState{HP: npc.HP}
+		}
 	}
 	for id, item := range world.Items {
 		if item.InitialLocation != nil && item.InitialLocation.Kind == "reserve" {
@@ -105,8 +127,16 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 			}
 			return err
 		}
-		c := &client{conn: conn, outbox: make(chan string, outboxSize), writerDone: make(chan struct{})}
+		c := &client{conn: conn, outbox: make(chan string, outboxSize), writerDone: make(chan struct{}), connectedAt: time.Now()}
 		s.mu.Lock()
+		if len(s.clients) >= maxConnections {
+			s.mu.Unlock()
+			_ = conn.SetWriteDeadline(time.Now().Add(250 * time.Millisecond))
+			_, _ = io.WriteString(conn, "OK hello proto=1\nERR 503 CONNECTION_LIMIT Server connection limit reached\n")
+			_ = conn.Close()
+			continue
+		}
+		s.recordConnectionLocked(conn.RemoteAddr(), time.Now())
 		s.clients[conn] = c
 		s.wg.Add(1)
 		s.mu.Unlock()
@@ -116,34 +146,49 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 
 func (s *Server) serveClient(c *client) {
 	defer s.wg.Done()
-	go writeLoop(c.conn, c.outbox, c.writerDone)
+	go s.writeClient(c)
 	defer s.disconnect(c)
 
 	s.logger.Info("client connected", "remote_addr", c.conn.RemoteAddr().String())
-	if !queue(c.outbox, "OK hello proto=42TAP/1") {
+	if !queue(c.outbox, "OK hello proto=1") {
 		return
 	}
 
 	reader := bufio.NewReaderSize(c.conn, maxLineBytes)
+	var limiter tokenBucket
 	for {
 		line, err := readLine(reader)
+		if err == nil {
+			username, remote := s.identity(c)
+			verb, params, _ := strings.Cut(line, " ")
+			s.logger.Info("command received", "event", "COMMAND_RECEIVED", "player", username, "remote_addr", remote, "command", verb, "params", params)
+		}
+		if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) && !limiter.allow(time.Now()) {
+			username, remote := s.identity(c)
+			s.logger.Warn("command flood", "event", "ABUSE_FLOOD", "player", username, "remote_addr", remote)
+			sendError(c, "rate_limited", "Command flood detected; connection closing")
+			return
+		}
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				return
 			}
-			if !errors.Is(err, errLineTooLong) && !errors.Is(err, errInvalidUTF8) && !errors.Is(err, errEmptyLine) && !errors.Is(err, errCRInLine) {
+			if !errors.Is(err, errLineTooLong) && !errors.Is(err, errInvalidUTF8) && !errors.Is(err, errEmptyLine) && !errors.Is(err, errCRInLine) && !errors.Is(err, errControlInLine) {
 				s.logger.Warn("client read failed", "remote_addr", c.conn.RemoteAddr().String(), "error", err)
 				return
 			}
-			reply := "ERR invalid_arguments Empty command"
+			s.logger.Warn("invalid request", "remote_addr", c.conn.RemoteAddr().String(), "error", err)
+			reply := "Empty command"
 			if errors.Is(err, errLineTooLong) {
-				reply = "ERR invalid_arguments Line exceeds 4096 bytes"
+				reply = "Line exceeds 4096 bytes"
 			} else if errors.Is(err, errInvalidUTF8) {
-				reply = "ERR invalid_arguments Line must be valid UTF-8"
+				reply = "Line must be valid UTF-8"
+			} else if errors.Is(err, errControlInLine) {
+				reply = "Control characters are forbidden"
 			} else if errors.Is(err, errCRInLine) {
-				reply = "ERR invalid_arguments Use LF without CR"
+				reply = "Use LF without CR"
 			}
-			if !queue(c.outbox, reply) {
+			if !sendError(c, "invalid_arguments", reply) {
 				return
 			}
 			continue
@@ -161,8 +206,11 @@ func (s *Server) disconnect(c *client) {
 	username := c.username
 	if username != "" {
 		delete(s.players, username)
+		s.releaseCombatLocked(c)
+		s.leaveGroupLocked(c)
 		s.dropInventoryLocked(c)
 		s.broadcastRoomLocked(c.roomID, c, "EVT ROOM PRESENCE LEAVE "+username)
+		s.broadcastStatsLocked()
 	}
 	delete(s.clients, c.conn)
 	s.mu.Unlock()
@@ -170,24 +218,32 @@ func (s *Server) disconnect(c *client) {
 	close(c.outbox)
 	<-c.writerDone
 	_ = c.conn.Close()
-	s.logger.Info("client disconnected", "remote_addr", c.conn.RemoteAddr().String(), "player", username)
+	s.logger.Info("client disconnected", "remote_addr", c.conn.RemoteAddr().String(), "player", username, "duration_ms", time.Since(c.connectedAt).Milliseconds())
 }
 
 func (s *Server) handleCommand(c *client, line string) bool {
 	verb, rest, hasArgs := strings.Cut(line, " ")
+	verb = strings.ToUpper(verb)
 	if verb == "CHAT" {
 		return s.chat(c, rest, hasArgs)
 	}
 	if verb == "TAKE" || verb == "DROP" {
 		return s.transferItem(c, verb, rest, hasArgs)
 	}
+	if verb == "ATTACK" {
+		return s.attack(c, rest, hasArgs)
+	}
 	if verb == "USE" {
 		return s.useItem(c, rest, hasArgs)
 	}
-	if verb == "TALK" {
-		return s.talk(c, rest, hasArgs)
+	if verb == "TALK" || verb == "TALKJSON" {
+		return s.talkReply(c, rest, hasArgs, verb == "TALKJSON")
+	}
+	if verb == "QUEST" {
+		return s.requestQuest(c, rest, hasArgs)
 	}
 	args := strings.Split(line, " ")
+	args[0] = verb
 	if strings.ContainsRune(line, '\t') || args[0] == "" {
 		return sendError(c, "invalid_arguments", "Command must start with a verb and use spaces, not tabs")
 	}
@@ -209,22 +265,27 @@ func (s *Server) handleCommand(c *client, line string) bool {
 		return s.status(c, args)
 	case "INVENTORY":
 		return s.inventory(c, args)
+	case "GROUP":
+		return s.group(c, args)
+	case "QUESTINFO", "QUESTS":
+		return s.quests(c, args)
+	case "DEFEND", "FLEE":
+		return s.combatAction(c, args)
 	case "QUIT":
 		if len(args) != 1 {
 			return sendError(c, "invalid_arguments", "QUIT takes no arguments")
 		}
+		queue(c.outbox, "OK bye")
 		return false
 	default:
 		name := shortVerb(args[0])
-		if isPlannedCommand(args[0]) {
-			return sendError(c, "not_implemented", fmt.Sprintf("Command %q is not implemented yet", name))
-		}
+
 		return sendError(c, "unknown_command", fmt.Sprintf("Unknown command %q", name))
 	}
 }
 
 func sendError(c *client, code, message string) bool {
-	return queue(c.outbox, "ERR "+code+" "+message)
+	return queue(c.outbox, errorReply(code, message))
 }
 
 func notAuthenticated(c *client, verb string) bool {
@@ -237,15 +298,6 @@ func shortVerb(verb string) string {
 		return string(runes[:24]) + "…"
 	}
 	return verb
-}
-
-func isPlannedCommand(verb string) bool {
-	switch verb {
-	case "ATTACK", "QUEST", "QUESTS", "GROUP":
-		return true
-	default:
-		return false
-	}
 }
 
 func (s *Server) connect(c *client, args []string) bool {
@@ -272,11 +324,12 @@ func (s *Server) connect(c *client, args []string) bool {
 	c.hp = maxPlayerHP
 	s.players[username] = c
 	s.broadcastRoomLocked(c.roomID, c, "EVT ROOM PRESENCE ENTER "+username)
+	s.broadcastStatsLocked()
 	return true
 }
 
 func (s *Server) look(c *client, args []string) bool {
-	if len(args) != 1 {
+	if !validDetailsArgs(args) {
 		return sendError(c, "invalid_arguments", "LOOK takes no arguments")
 	}
 	s.mu.RLock()
@@ -295,12 +348,25 @@ func (s *Server) look(c *client, args []string) bool {
 	}
 	s.mu.RUnlock()
 	sort.Strings(players)
+	var itemData, npcData any = items, npcs
+	if len(args) == 1 {
+		ids := make([]string, 0, len(items))
+		for _, item := range items {
+			ids = append(ids, item.ID)
+		}
+		itemData = ids
+		ids = make([]string, 0, len(npcs))
+		for _, npc := range npcs {
+			ids = append(ids, npc.ID)
+		}
+		npcData = ids
+	}
 	payload, err := json.Marshal(struct {
-		Room    roomView   `json:"room"`
-		Players []string   `json:"players"`
-		Items   []itemView `json:"items"`
-		NPCs    []npcView  `json:"npcs"`
-	}{Room: roomView{ID: room.ID, Name: room.Name, Description: room.Description, Exits: room.Exits}, Players: players, Items: items, NPCs: npcs})
+		Room    roomView `json:"room"`
+		Players []string `json:"players"`
+		Items   any      `json:"items"`
+		NPCs    any      `json:"npcs"`
+	}{Room: roomView{ID: room.ID, Name: room.Name, Description: room.Description, Exits: room.Exits}, Players: players, Items: itemData, NPCs: npcData})
 	if err != nil {
 		s.logger.Error("serialize LOOK failed", "error", err)
 		return sendError(c, "internal_error", "LOOK response could not be encoded")
@@ -319,6 +385,9 @@ func (s *Server) move(c *client, args []string) bool {
 		return notAuthenticated(c, "MOVE")
 	}
 	oldRoom := c.roomID
+	if c.target != "" {
+		return sendError(c, "in_combat", "MOVE is unavailable in combat; use FLEE")
+	}
 	room := s.world.Locations[oldRoom]
 	available := availableDirections(room)
 	if len(args) != 2 {
@@ -335,6 +404,7 @@ func (s *Server) move(c *client, args []string) bool {
 		return false
 	}
 	c.roomID = destination
+	s.logger.Info("player moved", "player", c.username, "from", oldRoom, "to", destination)
 	if destination != oldRoom {
 		s.broadcastRoomLocked(oldRoom, c, "EVT ROOM PRESENCE LEAVE "+c.username)
 		s.broadcastRoomLocked(destination, c, "EVT ROOM PRESENCE ENTER "+c.username)
@@ -359,6 +429,7 @@ func (s *Server) chat(c *client, rest string, hasArgs bool) bool {
 		return sendError(c, "invalid_arguments", "Usage: CHAT <GLOBAL|ROOM|GROUP> <message>")
 	}
 	channel, message, hasMessage := strings.Cut(rest, " ")
+	channel = strings.ToUpper(channel)
 	if !hasMessage {
 		return sendError(c, "invalid_arguments", "Usage: CHAT <GLOBAL|ROOM|GROUP> <message>")
 	}
@@ -373,8 +444,8 @@ func (s *Server) chat(c *client, rest string, hasArgs bool) bool {
 	if c.username == "" {
 		return notAuthenticated(c, "CHAT")
 	}
-	if channel == "GROUP" {
-		return sendError(c, "group_required", "CHAT GROUP requires group membership; GROUP is not implemented yet")
+	if channel == "GROUP" && c.group == "" {
+		return sendError(c, "group_required", "CHAT GROUP requires group membership; use GROUP CREATE or GROUP JOIN")
 	}
 	event := "EVT " + channel + " CHAT " + c.username + " " + message
 	if len(event)+1 > maxLineBytes {
@@ -384,7 +455,7 @@ func (s *Server) chat(c *client, rest string, hasArgs bool) bool {
 		return false
 	}
 	for _, other := range s.players {
-		if (channel == "GLOBAL" || other.roomID == c.roomID) && !queue(other.outbox, event) {
+		if (channel == "GLOBAL" || (channel == "ROOM" && other.roomID == c.roomID) || (channel == "GROUP" && other.group == c.group)) && !queue(other.outbox, event) {
 			s.logger.Warn("client outbox full", "player", other.username, "event", "CHAT")
 		}
 	}
@@ -392,7 +463,7 @@ func (s *Server) chat(c *client, rest string, hasArgs bool) bool {
 }
 
 func (s *Server) who(c *client, args []string) bool {
-	if len(args) != 1 {
+	if !validDetailsArgs(args) {
 		return sendError(c, "invalid_arguments", "WHO takes no arguments")
 	}
 	s.mu.RLock()
@@ -408,6 +479,9 @@ func (s *Server) who(c *client, args []string) bool {
 	}
 	serverCount := len(s.players)
 	s.mu.RUnlock()
+	if len(args) == 1 {
+		return queue(c.outbox, fmt.Sprintf("OK players=%d", serverCount))
+	}
 	sort.Strings(roomPlayers)
 	payload, err := json.Marshal(struct {
 		Room   []string `json:"room"`
@@ -434,17 +508,35 @@ func (s *Server) status(c *client, args []string) bool {
 		return notAuthenticated(c, "STATUS")
 	}
 	username, hp := c.username, c.hp
+	state := "HORS_COMBAT"
+	var combat *combatView
+	if target := s.npcStates[c.target]; c.target != "" && target != nil {
+		npc := s.world.NPCs[c.target]
+		state = "EN_COMBAT"
+		combat = &combatView{npc.ID, npc.Name, target.HP, npc.MaxHP}
+	}
 	s.mu.RUnlock()
+	health := "healthy"
+	if hp < maxPlayerHP {
+		health = "injured"
+	}
+	if state == "EN_COMBAT" {
+		health = "combat"
+	}
 	payload, err := json.Marshal(struct {
+		Status string      `json:"status"`
 		Player string      `json:"player"`
 		HP     int         `json:"hp"`
 		MaxHP  int         `json:"max_hp"`
 		State  string      `json:"state"`
 		Combat interface{} `json:"combat"`
-	}{Player: username, HP: hp, MaxHP: maxPlayerHP, State: "HORS_COMBAT", Combat: nil})
+	}{Status: health, Player: username, HP: hp, MaxHP: maxPlayerHP, State: state, Combat: combat})
 	if err != nil {
 		s.logger.Error("serialize STATUS failed", "error", err)
 		return sendError(c, "internal_error", "STATUS response could not be encoded")
+	}
+	if len(payload)+4 > maxLineBytes {
+		return sendError(c, "response_too_large", "STATUS response exceeds 4096-byte line limit")
 	}
 	return queue(c.outbox, "OK "+string(payload))
 }
@@ -486,19 +578,12 @@ func readLine(reader *bufio.Reader) (string, error) {
 	if strings.ContainsRune(string(line), '\r') {
 		return "", errCRInLine
 	}
-	return string(line), nil
-}
-
-// Only this goroutine writes to a client socket.
-func writeLoop(conn net.Conn, outbox <-chan string, done chan<- struct{}) {
-	defer close(done)
-	for message := range outbox {
-		_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-		if _, err := io.WriteString(conn, message+"\n"); err != nil {
-			_ = conn.Close()
-			return
+	for _, r := range string(line) {
+		if unicode.IsControl(r) && r != '\t' {
+			return "", errControlInLine
 		}
 	}
+	return string(line), nil
 }
 
 func queue(outbox chan<- string, message string) bool {

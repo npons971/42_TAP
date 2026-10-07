@@ -46,9 +46,9 @@ GOPATH="$PWD/.go-work" GOCACHE="$PWD/.go-cache" ./go vet ./...
   erreurs de protocole et limites de ligne ; suite entière sous détecteur de courses.
 
 Les blessures sont injectées sous verrou dans les tests ; aucune commande
-publique ne modifie arbitrairement les PV. Le combat, la progression complète
-de quête et la preuve d'élimination du bandit restent une étape suivante.
-L'allocateur de sa récompense est testé en interne ; TALK ne délivre pas la clé.
+publique ne modifie arbitrairement les PV. Le combat et la progression complète sont désormais testés dans
+[aris_acceptance.md](aris_acceptance.md). TALK délivre aussi la clé après une
+victoire réelle enregistrée contre le bandit.
 
 ## Essai manuel
 
@@ -65,5 +65,5 @@ TALK npc.herbalist
 
 La potion est attribuée une fois et les PV sont à 100. USE renvoie health_full
 et garde la potion. Le second TALK indique une livraison déjà terminée. Un
-second joueur qui parle au même donneur reçoit reward_unavailable. Sans combat,
-la branche de soin après blessure est vérifiée par les tests automatisés.
+second joueur qui parle au même donneur reçoit reward_unavailable. La branche de soin après blessure est vérifiée par les tests automatisés et
+peut aussi être exercée après un combat.

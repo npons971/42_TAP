@@ -60,7 +60,7 @@ The 42 subject permits any real graphical toolkit (curses is forbidden).
 
 ## 3. Mandatory GUI Features Checklist
 
-- [ ] **Real-Time Room Updates**: Parse `EVT ROOM PRESENCE ENTER <username>`, `EVT ROOM PRESENCE LEAVE <username>`, `EVT ROOM ITEM TAKE <username> <item_id>`, and `EVT ROOM ITEM DROP <username> <item_id>`. Update presence immediately and refresh `LOOK` after item events when the item descriptor is needed. See the [shared protocol proposal](../../Commun/protocol/rfc_syntax.md).
+- [ ] **Real-Time Room Updates**: Parse `EVT ROOM PRESENCE ENTER <username>`, `EVT ROOM PRESENCE LEAVE <username>`, `EVT ROOM ITEM TAKE <username> <item_id>`, and `EVT ROOM ITEM DROP <username> <item_id>`. Update presence immediately and refresh `LOOK DETAILS` after item events when the item descriptor is needed. See the [implemented shared protocol](../../Commun/protocol/rfc_syntax.md).
 - [ ] **Item Buttons**: Single-click `TAKE` on ground items and `DROP` on inventory items.
 - [ ] **Separation of Views**: Independent tabs for Global Chat, Room Chat, Group Chat, and System/Debug Logs.
 - [ ] **NPC Dialog Display**: Pop-up modal or dedicated text frame displaying the dialogue when `TALK` is triggered.
@@ -107,3 +107,12 @@ sequenceDiagram
 2. **User Interactions**: Maps button clicks directly to backend Wails promises (`App.Move()`, `App.Take()`, `App.Talk()`).
 3. **Tabbed Chat**: Segregates `GLOBAL`, `ROOM`, `GROUP`, and `LOGS` into distinct tab views with persistent scrolling.
 
+
+## RFC alignment (2026-10-07)
+
+The GUI requests metadata extensions with fallback to standard commands when
+refused. WHO/STATUS/QUESTS follow RFC formats, including ID arrays and empty
+quest lists. The server_reply event carries its command/request to correlate
+responses; STATS and GROUP notifications are handled. Default username:
+novanns. Run make test-gui from the repository root for networking and frontend
+handler tests plus the frontend build.

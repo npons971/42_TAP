@@ -71,7 +71,11 @@
         "id": "npc.giant_rat",
         "name": "Rat Géant",
         "role": "enemy",
-        "dialogue": "Le rat grince des dents en vous regardant."
+        "dialogue": "Le rat grince des dents en vous regardant.",
+        "hp": 20,
+        "max_hp": 20,
+        "attack_power": 6,
+        "hostile": true
       }
     ]
   }

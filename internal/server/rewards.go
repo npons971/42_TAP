@@ -7,18 +7,20 @@ import (
 	"strings"
 )
 
-// RewardDefinition is validated at load time. Quest progression is added later.
+// RewardDefinition is validated at load time and drives quest interactions.
 type RewardDefinition struct {
-	ID         string `json:"-"`
-	Giver      string `json:"giver"`
-	Type       string `json:"type"`
-	TargetItem string `json:"target_item"`
-	TargetNPC  string `json:"target_npc"`
-	DefeatNPC  string `json:"target_npc_defeat"`
-	ReportNPC  string `json:"target_npc_report"`
-	RewardItem string `json:"reward_item"`
-	Heal       int    `json:"reward_hp_heal"`
-	Dialogue   string `json:"completion_dialogue"`
+	ID          string `json:"-"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Giver       string `json:"giver"`
+	Type        string `json:"type"`
+	TargetItem  string `json:"target_item"`
+	TargetNPC   string `json:"target_npc"`
+	DefeatNPC   string `json:"target_npc_defeat"`
+	ReportNPC   string `json:"target_npc_report"`
+	RewardItem  string `json:"reward_item"`
+	Heal        int    `json:"reward_hp_heal"`
+	Dialogue    string `json:"completion_dialogue"`
 }
 
 func (w *World) validateRewards() error {
@@ -33,6 +35,13 @@ func (w *World) validateRewards() error {
 			return fmt.Errorf("quest %q: %w", id, err)
 		}
 		def.ID = id
+		if strings.TrimSpace(def.Title) == "" || strings.TrimSpace(def.Description) == "" {
+			return fmt.Errorf("quest %q needs title and description", id)
+		}
+		if previous := deliveryNPCs[def.Giver]; previous != "" {
+			return fmt.Errorf("quests %q and %q share a delivery NPC", previous, id)
+		}
+		deliveryNPCs[def.Giver] = id
 		giver, ok := w.NPCs[def.Giver]
 		if !ok || giver.Role != "quest_giver" {
 			return fmt.Errorf("quest %q needs a known quest_giver", id)
@@ -57,10 +66,7 @@ func (w *World) validateRewards() error {
 			if def.TargetNPC != def.Giver || def.TargetItem == def.RewardItem {
 				return fmt.Errorf("quest %q delivery target must be its giver and differ from reward", id)
 			}
-			if previous := deliveryNPCs[def.TargetNPC]; previous != "" {
-				return fmt.Errorf("quests %q and %q share a delivery NPC", previous, id)
-			}
-			deliveryNPCs[def.TargetNPC] = id
+
 		case "defeat_and_report":
 			enemy, ok := w.NPCs[def.DefeatNPC]
 			if !ok || enemy.Role != "enemy" || !enemy.Hostile || def.ReportNPC != def.Giver {
@@ -91,7 +97,7 @@ func (s *Server) grantRewardLocked(c *client, def RewardDefinition) bool {
 		return false
 	}
 	_, roomExists := s.world.Locations[c.roomID]
-	if c.username == "" || !roomExists || !s.rewardAvailableLocked(def) {
+	if c.username == "" || !roomExists || !s.rewardAvailableLocked(def) || s.inventoryCountLocked(c) >= maxInventoryItems {
 		return false
 	}
 	s.itemLocations[def.RewardItem] = itemLocation{owner: c}
@@ -100,9 +106,8 @@ func (s *Server) grantRewardLocked(c *client, def RewardDefinition) bool {
 	return true
 }
 
-// Delivery has no acceptance/progression requirement yet. Possession proves the
-// fetch objective; only the local giver can atomically consume it and reward it.
-func (s *Server) deliveryLocked(c *client, npcID string) *RewardDefinition {
+// Each giver owns one quest; TALK accepts it or validates its current objective.
+func (s *Server) questForNPCLocked(npcID string) *RewardDefinition {
 	ids := make([]string, 0, len(s.world.Rewards))
 	for id := range s.world.Rewards {
 		ids = append(ids, id)
@@ -110,7 +115,7 @@ func (s *Server) deliveryLocked(c *client, npcID string) *RewardDefinition {
 	sort.Strings(ids)
 	for _, id := range ids {
 		def := s.world.Rewards[id]
-		if def.Type == "fetch_and_deliver" && def.TargetNPC == npcID {
+		if def.Giver == npcID {
 			return &def
 		}
 	}

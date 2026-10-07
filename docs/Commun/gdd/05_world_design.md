@@ -166,16 +166,16 @@ Exemple minimal du format chargé :
 
 Le fichier actuel intègre les neuf salles du monde du Dev B, dix objets uniques, huit PNJ et deux définitions de quête. Il constitue la référence pour les changements de gameplay. `Project/data/world.yaml` conserve la proposition initiale, sans être chargé par le serveur. Le monde de test précédent est conservé dans `internal/server/testdata/two_rooms.json`. Les noms et descriptions du monde actif sont en anglais, comme dans la proposition du Dev B. Les noms français des fiches sont des traductions de conception.
 
-Le catalogue `world.npcs` contient les champs `id`, `name`, `role` et `dialogue` (chaîne UTF-8 non vide ou tableau ordonné non vide de chaînes non blanches). Chaque PNJ doit être déclaré une fois et placé dans exactement une salle via sa liste `npcs`. Le chargement refuse les références inconnues, les doublons, les IDs invalides et les PNJ sans salle. Les noms suivent les mêmes règles que ceux des objets. `role` vaut `dialogue`, `quest_giver` ou `enemy`. Les répliques du tableau sont jointes par un saut de ligne, échappé dans le JSON réseau. Le dialogue complet est fixe et privé au joueur qui utilise `TALK` ; la livraison à un donneur peut consommer un ingrédient et attribuer une récompense ; le combat et la progression complète seront ajoutés ensuite.
+Le catalogue `world.npcs` contient les champs `id`, `name`, `role` et `dialogue` (chaîne UTF-8 non vide ou tableau ordonné non vide de chaînes non blanches). Chaque PNJ doit être déclaré une fois et placé dans exactement une salle via sa liste `npcs`. Le chargement refuse les références inconnues, les doublons, les IDs invalides et les PNJ sans salle. Les noms suivent les mêmes règles que ceux des objets. `role` vaut `dialogue`, `quest_giver` ou `enemy`. Les répliques du tableau sont jointes par un saut de ligne, échappé dans le JSON réseau. Le dialogue complet est fixe et privé au joueur qui utilise `TALK` ; la livraison à un donneur peut consommer un ingrédient et attribuer une récompense ; le combat, les quêtes et leurs statuts sont implémentés.
 
 Pendant l'exécution, le serveur conserve une position unique par objet : une salle, une réserve, un état consommé ou l'inventaire d'un joueur. `TAKE` et `DROP` modifient cette position ; `LOOK` et `INVENTORY` lisent l'état courant. À la déconnexion, les objets portés sont déposés dans la salle actuelle du joueur. Un redémarrage recharge les placements initiaux du fichier.
 
 ### Métadonnées, respawn et données futures
 
 `world.metadata` conserve le nom et la version du monde. `world.start` désigne
-la salle de connexion et `world.respawn` la future salle de retour après une
+la salle de connexion et `world.respawn` la salle de retour après une
 défaite ; si absent, `respawn` prend la valeur de `start`. Les deux références
-sont validées. Le respawn ne déclenche aucune mécanique de combat à ce stade.
+sont validées. Le combat y renvoie le joueur avec 30 PV en cas de défaite.
 
 Les placements `spawns: [{npc_id, count: 1}]` de la proposition YAML deviennent
 `npcs: [npc_id]`. Plusieurs instances exigeraient plusieurs IDs uniques.
@@ -186,12 +186,12 @@ Les attributs d'objets (`description`, `type`, `heal_value`, `damage_bonus`,
 `hostile`) sont conservés dans les modèles. Les bonus et PV sont non négatifs,
 et les PV initiaux ne dépassent pas les PV maximum. `world.quests` conserve
 les définitions JSON et valide leurs types, donneurs, cibles et récompenses.
-Les livraisons fetch_and_deliver sont exécutées via TALK ; la progression
-complète et defeat_and_report nécessitent encore le moteur de combat/quêtes. Les réponses de `LOOK` restent limitées aux descripteurs du
+Les livraisons fetch_and_deliver sont exécutées via TALK ; la progression est consultable via QUESTINFO/QUESTS et defeat_and_report vérifie
+la victoire enregistrée par le moteur de combat. Les réponses de `LOOK` restent limitées aux descripteurs du
 protocole ; ces attributs supplémentaires ne sont pas envoyés implicitement.
 
 `item.ancient_key` et `item.vigor_potion` commencent en réserve. La potion est attribuée une seule fois par monde lors de la livraison
-des herbes à l'herboriste ; la clé attend le futur moteur de combat. Les objets uniques ne sont pas dupliqués par cette intégration.
+des herbes à l'herboriste ; la clé est attribuée après une victoire réelle sur le bandit et un rapport au capitaine. Les objets uniques ne sont pas dupliqués par cette intégration.
 
 La carte conserve les sorties dirigées de Novanns : `west` depuis la place
 mène à la ruelle, `south` depuis la ruelle retourne à la place et `east` depuis

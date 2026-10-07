@@ -44,6 +44,9 @@ func (s *Server) transferItem(c *client, verb, target string, hasArgs bool) bool
 	if c.username == "" {
 		return notAuthenticated(c, verb)
 	}
+	if c.target != "" {
+		return sendError(c, "in_combat", verb+" is unavailable in combat; use FLEE")
+	}
 	id, ambiguous := s.resolveItemLocked(c, verb, target)
 	if ambiguous {
 		return sendError(c, "invalid_arguments", verb+" name matches multiple items; use an item ID")
@@ -56,6 +59,12 @@ func (s *Server) transferItem(c *client, verb, target string, hasArgs bool) bool
 	}
 	if verb == "TAKE" && !s.world.Items[id].Obtainable {
 		return sendError(c, "item_not_obtainable", "Item "+id+" cannot be picked up with TAKE")
+	}
+	if verb == "TAKE" {
+		count := s.inventoryCountLocked(c)
+		if count >= maxInventoryItems {
+			return sendError(c, "inventory_full", "TAKE inventory limit reached; use DROP before taking another item")
+		}
 	}
 	reply := "OK taken=" + id
 	if verb == "DROP" {
@@ -105,7 +114,7 @@ func (s *Server) resolveItemLocked(c *client, verb, target string) (string, bool
 }
 
 func (s *Server) inventory(c *client, args []string) bool {
-	if len(args) != 1 {
+	if !validDetailsArgs(args) {
 		return sendError(c, "invalid_arguments", "INVENTORY takes no arguments")
 	}
 	s.mu.RLock()
@@ -121,7 +130,15 @@ func (s *Server) inventory(c *client, args []string) bool {
 	}
 	s.mu.RUnlock()
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-	payload, err := json.Marshal(items)
+	var data any = items
+	if len(args) == 1 {
+		ids := make([]string, 0, len(items))
+		for _, item := range items {
+			ids = append(ids, item.ID)
+		}
+		data = ids
+	}
+	payload, err := json.Marshal(data)
 	if err != nil {
 		return sendError(c, "internal_error", "INVENTORY response could not be encoded")
 	}
@@ -167,4 +184,14 @@ func (s *Server) dropInventoryLocked(c *client) {
 		s.broadcastItemLocked(c.roomID, "DROP", c.username, id)
 		s.logger.Info("item returned on disconnect", "item", id, "player", c.username, "room", c.roomID)
 	}
+}
+
+func (s *Server) inventoryCountLocked(c *client) int {
+	count := 0
+	for _, location := range s.itemLocations {
+		if location.owner == c {
+			count++
+		}
+	}
+	return count
 }
