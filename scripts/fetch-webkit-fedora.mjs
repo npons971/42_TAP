@@ -86,20 +86,13 @@ for (const pkg of [...packages.values()].flat()) {
   for (const value of pkg.provides) provide(value.name, pkg, value.ver ? evr(value) : '');
   for (const file of pkg.files) provide(file, pkg, '');
 }
-const installed = new Map();
-const inventory = execFileSync('rpm', ['-qa', '--qf', '[%{PROVIDENAME}\t%{PROVIDEVERSION}\n]'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-for (const line of inventory.trim().split('\n')) {
-  const [name, version] = line.split('\t');
-  if (!installed.has(name)) installed.set(name, []);
-  installed.get(name).push(version === '(none)' ? '' : version);
-}
 const selected = new Map();
 function conditional(requirement) {
   if (!requirement.name.startsWith('(')) return requirement;
   // Fedora development packages conditionally require RPM build macros.
-  const match = /^\((.+?) if ([\w.+-]+)\)$/.exec(requirement.name);
+  const match = /^\((.+?) if ([\w.+()-]+)\)$/.exec(requirement.name);
   if (!match) throw new Error('Unsupported RPM dependency: ' + requirement.name);
-  if (!installed.has(match[2]) && !selected.has(match[2])) return null;
+  if (!(providers.get(match[2]) || []).some(value => selected.has(value.pkg.name))) return null;
   const atom = /^([^\s]+)(?:\s+(=|>=|<=|>|<)\s+(\S+))?$/.exec(match[1]);
   if (!atom) throw new Error('Unsupported RPM dependency: ' + requirement.name);
   const [, name, operator, version] = atom;
@@ -110,28 +103,41 @@ function conditional(requirement) {
     epoch: value[1] || '0', ver: value[2], rel: value[3] };
 }
 function include(pkg) {
-  if (selected.has(pkg.name)) return;
+  if (selected.has(pkg.name)) {
+    if (selected.get(pkg.name).version !== pkg.version) {
+      throw new Error(`Conflicting RPM versions for ${pkg.name}: ${selected.get(pkg.name).version} / ${pkg.version}`);
+    }
+    return;
+  }
   selected.set(pkg.name, pkg);
+  includeDependencies(pkg);
+}
+function includeDependencies(pkg) {
   for (const dependency of pkg.requires) {
     const requirement = conditional(dependency);
     if (!requirement) continue;
     if (requirement.name.startsWith('rpmlib(')) continue;
-    // Development headers must be extracted even if installed on this host.
-    const development = /-devel(?:\(|$)/.test(requirement.name) || requirement.name.startsWith('pkgconfig(');
-    if (!development && (installed.get(requirement.name) || []).some(value => satisfies(value, requirement))) continue;
-    if (requirement.name.startsWith('/') && fs.existsSync(requirement.name)) continue;
+    // Every dependency comes from an archive, including installed host libraries.
     const candidates = providers.get(requirement.name) || [];
-    const provider = candidates.filter(value => satisfies(value.version, requirement))
-      .sort((a, b) => compare(b.pkg.version, a.pkg.version))[0];
+    const compatible = candidates.filter(value => satisfies(value.version, requirement));
+    const provider = compatible.find(value => selected.get(value.pkg.name) === value.pkg)
+      || compatible.sort((a, b) => compare(b.pkg.version, a.pkg.version))[0];
     if (!provider) throw new Error(`Cannot resolve ${pkg.name}: ${requirement.name}`);
     include(provider.pkg);
   }
 }
-for (const name of ['gtk3-devel', 'webkit2gtk4.1-devel', 'webkit2gtk4.1', 'pkgconf', 'pkgconf-pkg-config', 'libpkgconf']) {
+for (const name of ['glibc-devel', 'gtk3-devel', 'webkit2gtk4.1-devel', 'webkit2gtk4.1',
+  'shared-mime-info', 'adwaita-icon-theme', 'pkgconf', 'pkgconf-pkg-config', 'libpkgconf']) {
   const pkg = packages.get(name)?.sort((a, b) => compare(b.version, a.version))[0];
   if (!pkg) throw new Error('Package unavailable in this Fedora release: ' + name);
   include(pkg);
 }
+// A conditional can become active after its package was first traversed.
+let previousSize;
+do {
+  previousSize = selected.size;
+  for (const pkg of selected.values()) includeDependencies(pkg);
+} while (selected.size !== previousSize);
 console.log(`Archives GTK/WebKit locales : ${selected.size} paquets.`);
 if (flags.includes('--plan')) console.log([...selected.keys()].sort().join('\n'));
 else {

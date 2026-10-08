@@ -6,7 +6,8 @@ export PATH="$repo:$sdk/bin:$PATH"
 export GOPATH="$repo/.go-work" GOCACHE="$repo/.go-cache"
 export npm_config_cache="$repo/.npm-cache"
 export LD_LIBRARY_PATH="$sdk/lib64:$sdk/lib/x86_64-linux-gnu:$sdk/lib:${LD_LIBRARY_PATH:-}"
-export PKG_CONFIG_PATH="$sdk/lib64/pkgconfig:$sdk/lib/x86_64-linux-gnu/pkgconfig:$sdk/lib/pkgconfig:$sdk/share/pkgconfig:${PKG_CONFIG_PATH:-}"
+export PKG_CONFIG_LIBDIR="$sdk/lib64/pkgconfig:$sdk/lib/x86_64-linux-gnu/pkgconfig:$sdk/lib/pkgconfig:$sdk/share/pkgconfig"
+export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
 status=0
 check() {
   local label=$1
@@ -22,7 +23,9 @@ check 'Wails local' test -x "$repo/.go-work/bin/wails"
 check 'Compilateur C local' "$repo/cc" --version
 check 'pkg-config local' "$sdk/bin/pkg-config" --version
 check 'GTK3 et WebKitGTK 4.1 locaux' "$sdk/bin/pkg-config" --exists gtk+-3.0 webkit2gtk-4.1
+check 'Dépendances natives entièrement locales' "$repo/node" "$repo/scripts/check-webkit-libraries.mjs" "$repo/.webkit-sdk"
 check 'Processus et lanceur WebKit locaux' "$repo/node" --input-type=module -e "const { webkitRuntimeEnv } = await import(process.argv[2]); webkitRuntimeEnv(process.argv[1]);" "$repo" "$repo/scripts/webkit-runtime.mjs"
+check 'Chargement des icônes SVG GTK' "$repo/node" "$repo/scripts/check-webkit-images.mjs"
 if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
   printf '%s\n' '  OK  Session graphique annoncée (connexion à vérifier au lancement)'
 else

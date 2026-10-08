@@ -36,12 +36,13 @@ pour lui fournir les bibliothèques locales et la configuration du serveur.
 L'installation actuelle cible **Linux x86_64**. Go, Node, npm, Wails et le
 compilateur C [Zig](https://ziglang.org/download/index.json) sont installés dans le dépôt par `make install`, avec des
 versions fixées et des caches locaux. Aucun droit administrateur n'est requis.
-Sur Ubuntu/Debian, GTK3, WebKitGTK 4.1 et pkgconf sont téléchargés depuis les
+Sur Ubuntu/Debian et Fedora, GTK3, WebKitGTK 4.1 et pkgconf sont téléchargés depuis les
 dépôts officiels, vérifiés par SHA-256 et extraits dans `.webkit-sdk`. Les archives
-déjà présentes dans `install_files/webkit` sont réutilisées. Sur Fedora/RHEL,
-préparez les archives RPM correspondantes dans ce dossier avant `make install`.
-Les bibliothèques natives déjà présentes sur l'hôte sont réutilisées et les
-cibles des liens de développement sont copiées dans le SDK.
+déjà présentes dans `install_files/webkit` sont réutilisées. Toutes leurs
+dépendances transitives sont extraites localement, même lorsqu'elles existent
+sur l'hôte. Sur RHEL, préparez les archives RPM et toutes leurs dépendances dans
+ce dossier avant `make install`. Les fichiers pkg-config et les liens absolus
+sont relocalisés dans le SDK ; aucune bibliothèque de l'hôte n'est copiée.
 `make fetch-webkit WEBKIT_FETCH_ARGS=--plan` affiche les archives à récupérer ;
 `make fetch-webkit` les récupère sans installation système.
 Les outils ne lancent aucune commande d'administration système.
@@ -51,9 +52,19 @@ Les bibliothèques WebKit des distributions peuvent conserver un chemin fixe
 vers leurs processus auxiliaires dans `/usr`. Un adaptateur GIO compilé avec
 `./cc` dans `.build` redirige leur lancement vers les processus du SDK.
 Les lanceurs `make gui` et `./wails` chargent cet adaptateur et configurent le
-bundle injecté local ; aucune modification de `/usr` n'est nécessaire.
+bundle injecté local, y compris lorsque Fedora le place séparément dans
+`usr/lib64` et les processus dans `usr/libexec` ; aucune modification de `/usr`
+n'est nécessaire.
 `make check-gui` vérifie aussi ces fichiers. Après `make install`,
 `./node scripts/test-webkit-launch.mjs` teste la redirection sans ouvrir de fenêtre.
+
+L'installation génère aussi la base MIME locale et les caches des chargeurs
+GdkPixbuf, puis relocalise les exécutables Glycin sur les distributions qui
+les utilisent. Cette étape évite le crash GTK `image-missing.svg: Unrecognized
+image file format` après une simple extraction des archives.
+`make install` et `make check-gui` vérifient le décodage de cette icône SVG
+sans ouvrir de fenêtre. Après mise à jour des scripts, relancez `make run-all` :
+le SDK est automatiquement reconstruit avec cette configuration.
 
 ## Commandes de jeu
 

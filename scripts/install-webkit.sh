@@ -8,26 +8,27 @@ cache="$repo/install_files/webkit"
 # shellcheck source=/dev/null
 . /etc/os-release
 
-signature="${ID:-}|${VERSION_ID:-}|$(uname -m)|$repo"
+signature="local-dependencies-v3|${ID:-}|${VERSION_ID:-}|$(uname -m)|$repo"
 has_webkit_processes() {
-  local prefix=$1 directory
-  for directory in "$prefix"/usr/{lib/x86_64-linux-gnu,lib64,libexec,lib}/webkit2gtk-4.1; do
-    if [[ -x "$directory/WebKitNetworkProcess" && -x "$directory/WebKitWebProcess" &&
-          -r "$directory/injected-bundle/libwebkit2gtkinjectedbundle.so" ]]; then
-      return 0
-    fi
-  done
-  return 1
+  "$repo/node" --input-type=module -e \
+    'const { webkitRuntimePaths } = await import(process.argv[2]); webkitRuntimePaths(process.argv[1]);' \
+    "$1" "$repo/scripts/webkit-runtime.mjs"
 }
 if [[ "${1:-}" == --check && -f "$sdk_destination/.host" &&
-      "$(cat "$sdk_destination/.host")" == "$signature" ]] && has_webkit_processes "$sdk_destination"; then
+      "$(cat "$sdk_destination/.host")" == "$signature" ]] && has_webkit_processes "$sdk_destination" && \
+      "$repo/node" "$repo/scripts/check-webkit-libraries.mjs" "$sdk_destination"; then
   exit 0
 fi
 
 # Reconstruit dans un dossier distinct : un échec conserve le SDK utilisable,
 # et les bibliothèques d'une ancienne distribution ne sont jamais mélangées.
 sdk=$(mktemp -d "$repo/.webkit-sdk.stage.XXXXXX")
-trap '[[ ! -d "$sdk" ]] || rm -rf -- "$sdk"' EXIT
+cleanup_sdk() {
+  [[ -d "$sdk" ]] || return 0
+  find "$sdk" -type d -exec chmod u+rwx {} +
+  rm -rf -- "$sdk"
+}
+trap cleanup_sdk EXIT
 export PATH="$repo:$sdk/usr/bin:$PATH"
 export LD_LIBRARY_PATH="$sdk/usr/lib64:$sdk/usr/lib/x86_64-linux-gnu:$sdk/usr/lib:${LD_LIBRARY_PATH:-}"
 mkdir -p "$cache"
@@ -41,6 +42,18 @@ has_archive() {
   return 1
 }
 
+extract_rpm() {
+  local package=$1 patterns="$sdk/.rpm-files"
+  # Fedora's filesystem RPM gives /usr/lib* mode 0555. Do not restore directory
+  # permissions: cpio creates writable parent directories for this user's SDK.
+  rpm -qp --qf '[%{FILEMODES:perms} %{FILENAMES}\n]' "$package" \
+    | awk 'substr($0, 1, 1) != "d" { sub(/^[^ ]+ /, "."); print }' > "$patterns"
+  if [[ -s "$patterns" ]]; then
+    (cd "$sdk" && rpm2cpio "$package" | cpio -idmu --no-preserve-owner --no-absolute-filenames --quiet --pattern-file="$patterns")
+  fi
+  rm -f "$patterns"
+}
+
 case " ${ID:-} ${ID_LIKE:-} " in
   *" fedora "*|*" rhel "*)
     command -v rpm2cpio >/dev/null || { echo 'rpm2cpio est requis sur Fedora.' >&2; exit 1; }
@@ -50,14 +63,14 @@ case " ${ID:-} ${ID_LIKE:-} " in
       "$repo/node" "$repo/scripts/fetch-webkit.mjs" "$ID" "$VERSION_ID"
       while IFS= read -r filename; do
         [[ "$filename" != */* && "$filename" == *.rpm ]] || { echo 'Liste des archives invalide.' >&2; exit 1; }
-        (cd "$sdk" && rpm2cpio "$cache/$filename" | cpio -idmu --quiet)
+        extract_rpm "$cache/$filename"
       done < "$cache/.selected-archives"
     elif has_archive "gtk3-devel-*.$(uname -m).rpm" && \
        has_archive "webkit2gtk4.1-devel-*.$(uname -m).rpm"; then
       echo "Archives GTK3 et WebKitGTK trouvées dans $cache ; téléchargement ignoré."
       for package in "$cache"/*."$(uname -m)".rpm "$cache"/*.noarch.rpm; do
         [[ -s "$package" ]] || continue
-        (cd "$sdk" && rpm2cpio "$package" | cpio -idmu --quiet)
+        extract_rpm "$package"
       done
     else
       echo "Placez les archives RPM GTK3/WebKitGTK 4.1 et leurs dépendances dans $cache, puis relancez make install." >&2
@@ -92,36 +105,37 @@ while IFS= read -r -d '' pc; do
     -e "s|-I/usr/|-I$sdk/usr/|g" -e "s|-L/usr/|-L$sdk/usr/|g" "$pc"
 done < <(find "$sdk/usr" -type f -name '*.pc' -print0)
 
-# Les paquets -devel contiennent des liens .so vers les bibliothèques déjà
-# présentes sur l'hôte. Copie ces cibles dans le SDK pour que l'édition de liens
-# et l'exécution utilisent les fichiers du projet.
+# Relocalise les liens absolus sans copier de bibliothèques de l'hôte.
 while IFS= read -r -d '' link; do
-  [[ -e "$link" ]] && continue
   target=$(readlink "$link")
-  if [[ "$target" = /* ]]; then
-    source="$target"
-    destination="$link"
-  else
-    source="$(dirname "${link#"$sdk"}")/$target"
-    destination="$(dirname "$link")/$target"
+  if [[ "$target" == /usr/* || "$target" == /lib/* || "$target" == /lib64/* ]]; then
+    # A relative target remains valid after the staging SDK is renamed.
+    local_target=$(realpath -m --relative-to="$(dirname "$link")" "$sdk$target")
+    ln -sfn "$local_target" "$link"
   fi
-  [[ -f "$source" ]] || continue
-  [[ -L "$destination" ]] && continue
-  mkdir -p "$(dirname "$destination")"
-  cp -L "$source" "$destination"
-done < <(find "$sdk/usr/lib" "$sdk/usr/lib64" -type l -name '*.so*' -print0 2>/dev/null)
+done < <(find "$sdk" -type l -print0)
 
-export PKG_CONFIG_PATH="$sdk/usr/lib64/pkgconfig:$sdk/usr/lib/x86_64-linux-gnu/pkgconfig:$sdk/usr/lib/pkgconfig:$sdk/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
+export PKG_CONFIG_LIBDIR="$sdk/usr/lib64/pkgconfig:$sdk/usr/lib/x86_64-linux-gnu/pkgconfig:$sdk/usr/lib/pkgconfig:$sdk/usr/share/pkgconfig"
+export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
 [[ -x "$sdk/usr/bin/pkg-config" ]] && "$sdk/usr/bin/pkg-config" --exists gtk+-3.0 webkit2gtk-4.1 || {
   echo 'Headers GTK3/WebKit2GTK 4.1 introuvables via pkg-config.' >&2
   exit 1
 }
+
+"$repo/node" "$repo/scripts/check-webkit-libraries.mjs" "$sdk"
+
+# L'extraction des archives n'exécute pas les hooks des gestionnaires de paquets.
+if [[ -x "$sdk/usr/bin/glib-compile-schemas" && -d "$sdk/usr/share/glib-2.0/schemas" ]]; then
+  "$sdk/usr/bin/glib-compile-schemas" "$sdk/usr/share/glib-2.0/schemas"
+fi
+"$repo/node" "$repo/scripts/prepare-webkit-images.mjs" "$sdk" "$sdk_destination"
 
 # Le SDK validé doit garder des chemins stables après son déplacement.
 while IFS= read -r -d '' pc; do
   sed -i "s|$sdk|$sdk_destination|g" "$pc"
 done < <(find "$sdk/usr" -type f -name '*.pc' -print0)
 printf '%s\n' "$signature" > "$sdk/.host"
+"$repo/node" "$repo/scripts/configure-webkit-sdk.mjs" "$sdk" "$sdk_destination"
 touch "$sdk/.installed"
 old_sdk=''
 if [[ -d "$sdk_destination" ]]; then

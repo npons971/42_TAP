@@ -22,13 +22,6 @@ fs.mkdirSync(cache, { recursive: true });
 const indexes = path.join(cache, 'indexes');
 fs.mkdirSync(indexes, { recursive: true });
 const packages = new Map(), providers = new Map();
-// Keep the host's existing runtime ABI; headers and missing libraries go local.
-const installed = new Map();
-const inventory = execFileSync('dpkg-query', ['-W', '-f=${binary:Package}\t${Version}\t${db:Status-Status}\t${Architecture}\n'], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
-for (const line of inventory.split('\n')) {
-  const [name, version, status, architecture] = line.split('\t');
-  if (status === 'installed' && ['amd64', 'all'].includes(architecture)) installed.set(name.replace(/:.*$/, ''), version);
-}
 const versionResults = new Map();
 const compare = (a, operator, b) => {
   if (a === b) return ['=', '>=', '<=', 'eq', 'ge', 'le'].includes(operator);
@@ -78,10 +71,6 @@ function resolve(dependency) {
   const match = /^([\w.+-]+)(?::[\w-]+)?(?:\s+\((>=|<=|=|<<|>>)\s+([^\)]+)\))?/.exec(dependency.trim());
   if (!match) throw new Error('Unsupported dependency: ' + dependency);
   const [, name, operator, version] = match;
-  const localVersion = installed.get(name);
-  if (!/-dev(?:-bin)?$/.test(name) && localVersion && (!operator || compare(localVersion, operator, version))) {
-    return { installed: true };
-  }
   const pkg = packages.get(name) || providers.get(name);
   if (!pkg || (operator && !compare(pkg.Version, operator, version))) return null;
   return pkg;
@@ -92,7 +81,7 @@ function include(pkg) {
   for (const group of [pkg['Pre-Depends'], pkg.Depends].filter(Boolean).join(', ').split(', ').filter(Boolean)) {
     const alternative = group.split(/\s*\|\s*/).map(resolve).find(Boolean);
     if (!alternative) throw new Error('Cannot resolve ' + pkg.Package + ': ' + group);
-    if (!alternative.installed) include(alternative);
+    include(alternative);
   }
 }
 const pkgConfigPackages = packages.has('pkgconf-bin')
@@ -100,7 +89,8 @@ const pkgConfigPackages = packages.has('pkgconf-bin')
   : ['pkg-config'];
 // Always extract WebKit's runtime: it also supplies the local child processes
 // and injected bundle, even when a compatible library exists on the host.
-for (const name of ['libgtk-3-dev', 'libwebkit2gtk-4.1-dev', 'libwebkit2gtk-4.1-0', ...pkgConfigPackages]) {
+for (const name of ['libc6-dev', 'libgtk-3-dev', 'libwebkit2gtk-4.1-dev', 'libwebkit2gtk-4.1-0',
+  'shared-mime-info', 'adwaita-icon-theme', 'librsvg2-common', ...pkgConfigPackages]) {
   const pkg = packages.get(name);
   if (!pkg) throw new Error('Package unavailable in this release: ' + name);
   include(pkg);

@@ -122,6 +122,7 @@ install: go npm gcc wails install-webkit
 
 install-webkit: .webkit-sdk/.installed .build/libtap-webkit-launch.so
 	$(OUTPUT) run 'Vérification de GTK / WebKit' bash scripts/install-webkit.sh --check
+	$(OUTPUT) run 'Vérification du chargement des icônes SVG' $(NODE) scripts/check-webkit-images.mjs
 
 fetch-webkit: node
 	@. /etc/os-release; $(NODE) scripts/fetch-webkit.mjs "$$ID" "$${VERSION_CODENAME:-$$VERSION_ID}" $(WEBKIT_FETCH_ARGS)
@@ -182,7 +183,7 @@ wails: .go-work/bin/wails npm scripts/wails-local.sh Makefile
 .go-work/bin/wails: go
 	$(OUTPUT) run 'Installation de Wails et de ses dépendances Go' ./go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
 
-.webkit-sdk/.installed: scripts/install-webkit.sh scripts/fetch-webkit.mjs scripts/fetch-webkit-fedora.mjs node
+.webkit-sdk/.installed: scripts/install-webkit.sh scripts/fetch-webkit.mjs scripts/fetch-webkit-fedora.mjs scripts/webkit-runtime.mjs scripts/check-webkit-libraries.mjs scripts/configure-webkit-sdk.mjs scripts/prepare-webkit-images.mjs node
 	$(OUTPUT) run 'Installation de GTK / WebKit et de ses dépendances' bash scripts/install-webkit.sh
 	touch $@
 
