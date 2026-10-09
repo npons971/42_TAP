@@ -11,20 +11,27 @@ La documentation est organisée par responsabilité. Les documents partagés ont
 
 
 
-## Dev A — Aris : serveur et CLI
+## Dev A — Aris : serveur réseau et protocole
 
 - [Tâches de Dev A](Dev_A/TAP_Aris_Dev_A.md)
 - [Architecture serveur](Dev_A/architecture/server_architecture.md) et [modèle de concurrence](Dev_A/architecture/concurrency_model.md)
-- [Client CLI](Dev_A/clients/cli_client.md)
 - [Logging serveur](Dev_A/logging/server_logging.md)
 - [Documentation commune](Dev_A/Commun/TAP_taches_communes.md)
 
-## Dev B — Novanns : GUI et conception du monde
+## Dev B — Novanns : client GUI
 
 - [Tâches de Dev B](Dev_B/TAP_Novanns_Dev_B.md)
 - [Client GUI](Dev_B/clients/gui_client.md)
-- [Game Design Document](Dev_B/Commun/gdd/README.md)
 - [Documentation commune](Dev_B/Commun/TAP_taches_communes.md)
+
+## Alexis (Dev C) : moteur de jeu, monde et CLI
+
+- [Tâches d’Alexis (Dev C)](Dev_C/TAP_Dev_C.md)
+- [Client CLI](Dev_A/clients/cli_client.md) — emplacement historique conservé, suivi par Dev C
+- [Game Design Document](Commun/gdd/README.md)
+- [Vérifications moteur et CLI existantes](Commun/testing/aris_acceptance.md)
+
+Les responsabilités actuelles sont détaillées dans [l’organisation à trois](Commun/TAP_taches_communes.md). Les contributions historiques restent attribuées à leurs auteurs.
 
 ## Commun — référentiel partagé
 

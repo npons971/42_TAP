@@ -1,7 +1,7 @@
 # 42 Peer-Evaluation & Defense Guide
 
 > **Document Status**: `🔵 IN_REVIEW`  
-> **Assigned to**: Aris (Dev A) & Novanns (Dev B)  
+> **Assigned to**: Aris (Dev A), Novanns (Dev B) & Dev C<br>
 > **Last Updated**: 2026-10-07
 
 This document is a practical playbook for presenting the project during 42 peer-evaluation and successfully passing the live code modification test specified in Chapter VII.2 of the subject.

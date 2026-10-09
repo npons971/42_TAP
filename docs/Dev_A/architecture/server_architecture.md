@@ -1,5 +1,9 @@
 # Server architecture — implemented
 
+Current owners: Aris (Dev A) for network/protocol, Dev C for game state and
+world loading. Historical implementation: Aris. See
+[team organization](../../Commun/TAP_taches_communes.md).
+
 The Go module is rooted at the repository. `cmd/server` loads and validates
 `data/world.json`, configures JSON logging, opens TCP and handles SIGINT/SIGTERM.
 All SDK/cache paths are local to the repository through Makefile targets.

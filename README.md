@@ -25,6 +25,29 @@ For a remote server: `make gui GUI_HOST=192.168.1.10 GUI_PORT=4242 GUI_SERVER=of
 See the [GUI guide](Project/client-gui/README.md) for platform requirements,
 installation and gameplay controls. Run `make` for command help.
 
+## Group Contributions
+
+The project is organized into three areas:
+
+| Member | Current responsibility |
+|---|---|
+| Aris (Dev A) | TCP server, sessions, RFC parsing and routing, replies and events, social commands, concurrency, logging and abuse detection |
+| Novanns (Dev B) | GUI, TCP integration, asynchronous updates, gameplay views and controls, chat and player counters |
+| Alexis (Dev C) | Game engine, world data and validation, exploration, items, NPCs, combat, quests, rewards and CLI |
+
+Aris handles transport and protocol compliance; Dev C handles game rules and
+state mutations. They jointly define synchronization and the result/event
+contract. Novanns renders server data and sends actions through the GUI.
+Each member owns tests and documentation for their area. Gameplay design,
+build tooling, integration, interoperability and peer review are shared.
+
+Historical contributions remain attributed to their authors: Aris implemented
+the existing server, game engine and CLI; Novanns designed the initial world
+and developed the GUI. Dev C takes over engine, world and CLI maintenance
+after handover; this assignment does not claim completed contributions.
+See the [team organization](docs/Commun/TAP_taches_communes.md) and
+[individual responsibility documents](docs/README.md).
+
 ## Current server milestone
 
 The Go TCP server accepts multiple simultaneous connections, sends

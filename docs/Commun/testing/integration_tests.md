@@ -1,7 +1,7 @@
 # Integration & Automated Testing Suite
 
 > **Document Status**: `🟡 IN_PROGRESS`  
-> **Assigned to**: Aris (Dev A) & Novanns (Dev B)  
+> **Assigned to**: Aris (Dev A), Novanns (Dev B) & Dev C<br>
 > **Last Updated**: 2026-10-07
 
 The README requires a dedicated "Testing" section demonstrating how multiplayer functionality, combat mechanics, and quest progression are verified. This document outlines the test strategy and test harnesses.

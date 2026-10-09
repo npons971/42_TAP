@@ -1,7 +1,7 @@
 # Concurrency Model & Thread-Safety
 
 > **Document Status**: `🟡 IN_PROGRESS (Initial model implemented)`
-> **Assigned to**: Aris (Dev A)  
+> **Assigned to**: Aris (Dev A) & Dev C<br>
 > **Last Updated**: 2026-10-07
 
 The server must handle multiple concurrent TCP connections, process asynchronous world events, and prevent data race conditions without deadlocking or crashing during client disconnections.

@@ -29,7 +29,7 @@ Le combat n'est pas du matraquage de commande : chaque tour compte. Gérer ses p
 
 ## 3. Direction Narrative & Ambiance
 
-*Note : La thématique précise (ex: Médiéval-Fantastique sombre, Cyberpunk rétro, Donjon classique) est à affiner par l'équipe (notamment Novanns).*
+*Note : La thématique précise (ex: Médiéval-Fantastique sombre, Cyberpunk rétro, Donjon classique) est à affiner par l'équipe, sous le pilotage de Dev C.*
 
 - **Ambiance sonore et visuelle projetée** : descriptions textuelles courtes mais percutantes, vocabulaire évocateur mettant en valeur les détails de chaque lieu.
 - **Ton du jeu** : teinté de mystère et d'aventure rétro, avec des PNJ aux personnalités marquées (le garde méfiant, le marchand opportuniste, le monstre menaçant).
