@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install install-webkit clean build build-server run-server run-all test-server build-cli run-cli test test-cli-pty gui run-gui dev-gui build-gui check-gui test-gui build-frontend test-client test-integration test-all frontend-deps fetch-webkit
+.PHONY: help install install-webkit clean build build-server run-server run-all build-cli run-cli test lint gui run-gui dev-gui build-gui check-gui build-frontend frontend-deps fetch-webkit
 
 PROJECT_ROOT := $(CURDIR)
 GO := $(PROJECT_ROOT)/go
@@ -37,7 +37,8 @@ help:
 	  '  make check-gui    Vérifie les outils locaux et GTK/WebKit' \
 	  '  make run-server   Lance uniquement le serveur TCP' \
 	  '  make run-cli      Lance le client terminal' \
-	  '  make test-all     Tests serveur, clients et interface' \
+	  '  make test         Tests serveur, CLI, GUI et compilation du frontend' \
+	  '  make lint         Vérifie le formatage Go et analyse Go, JavaScript et Svelte' \
 	  '  make install      Installe les outils dans le dépôt' \
 	  '' 'Serveur distant : make gui GUI_HOST=adresse GUI_PORT=4242 GUI_SERVER=off' \
 	  'Sortie détaillée : make install V=1 (logs : .build/logs/)' ''
@@ -69,13 +70,6 @@ run-server: go
 	@$(OUTPUT) say 'Démarrage du serveur sur $(SERVER_ADDR)'
 	./go run ./cmd/server -addr "$(SERVER_ADDR)" -world "$(WORLD_FILE)"
 
-test-server: go
-	@if test -x ./cc; then \
-		CGO_ENABLED=1 CC="$(PROJECT_ROOT)/cc" ./go test -race ./internal/server; \
-	else \
-		./go test ./internal/server; \
-	fi
-
 build-cli: go
 	mkdir -p .build
 	$(OUTPUT) run 'Compilation du client terminal' ./go build -o .build/tap-cli ./cmd/client-cli
@@ -84,12 +78,17 @@ run-cli: go
 	@$(OUTPUT) say 'Connexion du client à $(CLI_ADDR)'
 	./go run ./cmd/client-cli -addr "$(CLI_ADDR)"
 
-test: go
-	@if test -x ./cc; then \
-		CGO_ENABLED=1 CC="$(PROJECT_ROOT)/cc" ./go test -race ./...; \
-	else \
-		./go test ./...; \
-	fi
+test: go cc frontend-deps
+	$(OUTPUT) run 'Tests Go serveur et CLI (race)' env CGO_ENABLED=1 CC="$(PROJECT_ROOT)/cc" $(GO) test -race -count=1 -timeout=120s ./...
+	$(OUTPUT) run 'Tests Go du backend GUI (race, sans fenêtre)' bash scripts/check-code.sh test-gui
+	$(OUTPUT) run 'Régressions du protocole frontend' $(NODE) scripts/test-gui-protocol.mjs
+	$(OUTPUT) run 'Compilation du frontend' $(NPM) --prefix $(GUI_DIR)/frontend run build
+	@$(OUTPUT) say 'Tous les tests ont réussi'
+
+lint: go frontend-deps
+	$(OUTPUT) run 'Formatage et analyse statique Go' bash scripts/check-code.sh lint-go
+	$(OUTPUT) run 'Analyse JavaScript et Svelte' $(NODE) scripts/lint-frontend.mjs
+	@$(OUTPUT) say 'Toutes les vérifications lint ont réussi'
 
 frontend-deps: $(GUI_DIR)/frontend/node_modules/.tap-installed
 
@@ -99,23 +98,6 @@ $(GUI_DIR)/frontend/node_modules/.tap-installed: $(GUI_DIR)/frontend/package.jso
 
 build-frontend: frontend-deps
 	$(OUTPUT) run 'Compilation du frontend' ./npm --prefix Project/client-gui/frontend run build
-
-test-client: go
-	@if test -x ./cc; then \
-		cd $(GUI_DIR) && CGO_ENABLED=1 CC="$(PROJECT_ROOT)/cc" $(GO) test -race -v app.go app_test.go; \
-	else \
-		cd $(GUI_DIR) && $(GO) test -v app.go app_test.go; \
-	fi
-
-test-integration: test-client
-
-test-gui: test-client build-frontend
-	./node scripts/test-gui-protocol.mjs
-
-test-cli-pty: build-cli
-	python3 scripts/test-cli-pty.py
-
-test-all: test-server test-client test-gui test-cli-pty
 
 install: go npm gcc wails install-webkit
 	@$(OUTPUT) say 'Outils locaux prêts — make help pour les commandes'

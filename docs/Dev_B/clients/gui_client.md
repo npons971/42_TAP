@@ -114,7 +114,7 @@ The GUI requests metadata extensions with fallback to standard commands when
 refused. WHO/STATUS/QUESTS follow RFC formats, including ID arrays and empty
 quest lists. The server_reply event carries its command/request to correlate
 responses; STATS and GROUP notifications are handled. Default username:
-novanns. Run make test-gui from the repository root for networking and frontend
+novanns. Run make test from the repository root for networking and frontend
 handler tests plus the frontend build.
 
 ## Launch and review (2026-10-09)

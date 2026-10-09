@@ -6,13 +6,11 @@
 make test
 GOPATH="$PWD/.go-work" GOCACHE="$PWD/.go-cache" ./go test -race -count=30 ./...
 make build-server build-cli
-GOPATH="$PWD/.go-work" GOCACHE="$PWD/.go-cache" ./go vet ./...
-make test-cli-pty
-make test-gui
+make lint
 ```
 
-Le SDK et les caches sont locaux au dépôt. Le test PTY nécessite Linux et
-Python 3, sans dépendance Python supplémentaire.
+Le SDK et les caches sont locaux au dépôt. Les tests de pseudo-terminal sont
+écrits en Go et exécutés sur Linux avec les autres tests CLI.
 
 ## Matrice de tests
 

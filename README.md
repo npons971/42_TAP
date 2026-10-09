@@ -136,10 +136,10 @@ Open a second `nc` session with `CONNECT bob` to see presence events. `QUIT`
 closes only that client connection; the server keeps accepting clients until
 you stop `make run-server` with Ctrl+C.
 
-Run the networking tests with the race detector:
+Run all automated tests with the race detector:
 
 ```sh
-make test-server
+make test
 ```
 
 `make build-server` writes an executable to `.build/tap-server`.
@@ -289,10 +289,21 @@ independent client remains an external interoperability check.
 
 ```sh
 make test
+make lint
 make build-server build-cli
-make test-gui
-GOPATH="$PWD/.go-work" GOCACHE="$PWD/.go-cache" ./go vet ./...
 ```
+
+`make test` provisions local Go, Node and C tools as needed, runs the server/CLI
+and GUI TCP backend tests with the race detector, checks frontend protocol
+handlers and builds Svelte. Go tests always run again (no result cache), with
+a two-minute timeout per package. On Linux, CLI tests also exercise a real
+pseudo-terminal, including remote disconnect, input, SIGTERM and restoration.
+No graphical session or GTK/WebKit installation is needed for these checks.
+
+`make lint` checks Go formatting without modifying files, runs `go vet` on the
+server/CLI and GUI TCP backend, checks JavaScript syntax and rejects Svelte
+compiler warnings. Generated Wails JavaScript is excluded. Use `V=1` for full
+command output; failures otherwise display the log location in `.build/logs/`.
 
 Tests cover complete bounty/delivery runs, quest status/reconnect, group chat
 isolation across rooms, concurrent enemy/group/reward contention, defend/flee,
