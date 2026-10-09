@@ -1,5 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
+  import RoomMap from './RoomMap.svelte';
+  import Icon from './Icon.svelte';
 
   // Connection State
   let connected = false;
@@ -25,10 +27,9 @@
 
   // Room names mapping for intuitive navigation
   let roomNames = {};
-
-  function getDestName(destId) {
-    return roomNames[destId] || String(destId).replace(/^loc\./, '').replace(/_/g, ' ');
-  }
+  let nearbyTab = 'npc';
+  let selectedEntity = '';
+  let mapExpanded = false;
 
   // Inventory & Quests
   let inventory = [];
@@ -106,6 +107,9 @@
     connecting = false;
     currentRoom = emptyRoom();
     roomNames = {};
+    nearbyTab = 'npc';
+    selectedEntity = '';
+    mapExpanded = false;
     inventory = [];
     quests = [];
     playerHP = 100;
@@ -183,6 +187,10 @@
 
         // LOOK payload
         if (data.room && !Array.isArray(data.room) && data.room.id) {
+          if (currentRoom.id !== data.room.id) {
+            selectedEntity = '';
+            nearbyTab = data.npcs?.length ? 'npc' : data.items?.length ? 'item' : 'player';
+          }
           currentRoom = {
             id: data.room.id || "unknown",
             name: data.room.name || "Unknown Room",
@@ -259,7 +267,7 @@
         const cleanName = item.replace(/^item\./, '').replace(/_/g, ' ');
         return { id: item, name: cleanName, obtainable: true };
       }
-      return { id: item.id, name: item.name || item.id, obtainable: item.obtainable !== false };
+      return { id: item.id, name: item.name || item.id, description: item.description || '', obtainable: item.obtainable !== false };
     });
   }
 
@@ -269,7 +277,7 @@
         const cleanName = npc.replace(/^npc\./, '').replace(/_/g, ' ');
         return { id: npc, name: cleanName, role: 'dialogue', unknownRole: true };
       }
-      return { id: npc.id, name: npc.name || npc.id, role: npc.role || 'dialogue' };
+      return { id: npc.id, name: npc.name || npc.id, description: npc.description || '', role: npc.role || 'dialogue' };
     });
   }
 
@@ -414,9 +422,21 @@
   function handleKeyDown(e) {
     if (e.key === "Enter" && !e.isComposing) handleSendMessage();
   }
+  function selectMapEntity(kind, id) {
+    nearbyTab = kind;
+    selectedEntity = id;
+  }
+  function handleGameShortcut(event) {
+    if (!connected || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || activeDialogue || showGroupModal || mapExpanded) return;
+    if (event.target?.closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return;
+    const action = {'1': callLook, '2': callStatus, '3': callQuests, '4': callWho, '5': () => showGroupModal = true}[event.key];
+    if (action) { event.preventDefault(); action(); }
+  }
 </script>
 
-<main class="app-container">
+<svelte:window on:keydown={handleGameShortcut} />
+
+<main class="app-container" class:game-session={connected}>
   {#if !connected}
     <!-- CONNECTION SCREEN -->
     <div class="connect-overlay">
@@ -480,104 +500,51 @@
       <button class="btn-disconnect" on:click={handleDisconnect}>Leave world <span aria-hidden="true">↗</span></button>
     </header>
 
-    <div class="chapter-bar"><span class="eyebrow">THE ADVENTURE</span><span>Explore at your own pace. Every path has a story.</span></div>
+    <div class="chapter-bar"><span class="eyebrow">WORLD EXPLORATION</span><span>Follow the paths. Discover what lies beyond.</span></div>
     {#if actionError}<div class="action-error" role="alert">{actionError}</div>{/if}
     <div class="game-grid">
-      <!-- LEFT COLUMN: WORLD EXPLORATION -->
+      <!-- Map and local interactions are driven exclusively by LOOK data. -->
       <section class="panel room-panel">
-        <div class="panel-header">
-          <h2><span class="section-number">01</span> YOUR SURROUNDINGS</h2>
-          <span class="room-id" title="Location identifier">{currentRoom.id}</span>
+        <div class="panel-header location-header">
+          <div><span class="eyebrow">EXPLORATION</span><h2 class="room-name">{currentRoom.name}</h2></div>
+          <span class="location-paths"><Icon name="map" size={16} /> {Object.keys(currentRoom.exits).length} paths</span>
         </div>
-
-        <div class="room-content">
-          <div class="location-story">
-            <span class="eyebrow">YOU ARE HERE</span>
-            <h3 class="room-name">{currentRoom.name}</h3>
-            <p class="room-desc">{currentRoom.description}</p>
-            <img class="room-compass" src="/compass.svg" alt="" />
-          </div>
-
-          <div class="exits-section">
-            <h4>CHOOSE YOUR PATH <span>{Object.keys(currentRoom.exits).length} exits</span></h4>
-            <div class="exits-grid">
-              {#each Object.entries(currentRoom.exits) as [dir, dest]}
-                <button class="btn-exit" disabled={combatState === "EN_COMBAT"} on:click={() => callMove(dir)}>
-                  <span class="exit-arrow" aria-hidden="true">{{north: '↑', south: '↓', east: '→', west: '←', up: '↗', down: '↙'}[dir.toLowerCase()] || '↗'}</span>
-                  <span class="exit-label"><span class="dir-tag">{dir}</span><span class="dest-tag">{getDestName(dest)}</span></span>
-                </button>
-              {/each}
-              {#if Object.keys(currentRoom.exits).length === 0}
-                <div class="empty-hint">No paths lead away from here.</div>
-              {/if}
-            </div>
+        <RoomMap room={currentRoom} names={roomNames} {username} inCombat={combatState === 'EN_COMBAT'} onmove={callMove} onselect={selectMapEntity} bind:expanded={mapExpanded} />
+        <div class="location-caption"><Icon name="pin" size={18} /><p class="room-desc" title={currentRoom.description}>{currentRoom.description || 'Discovering your surroundings…'}</p></div>
+        <div class="surroundings-header">
+          <span class="eyebrow">NEARBY</span>
+          <div class="nearby-tabs" aria-label="Surroundings">
+            <button class:active={nearbyTab === 'npc'} aria-pressed={nearbyTab === 'npc'} on:click={() => nearbyTab = 'npc'}><Icon name="person" size={14} /> Characters <span class="count">{currentRoom.npcs.length}</span></button>
+            <button class:active={nearbyTab === 'item'} aria-pressed={nearbyTab === 'item'} on:click={() => nearbyTab = 'item'}><Icon name="bag" size={14} /> Objects <span class="count">{currentRoom.items.length}</span></button>
+            <button class:active={nearbyTab === 'player'} aria-pressed={nearbyTab === 'player'} on:click={() => nearbyTab = 'player'}><Icon name="users" size={14} /> Travelers <span class="count">{currentRoom.players.length}</span></button>
           </div>
         </div>
-
-        <!-- ENTITIES IN ROOM -->
-        <div class="entities-grid">
-          <!-- GROUND ITEMS -->
-          <div class="entity-card">
-            <h4>Nearby objects <span class="count">{currentRoom.items.length}</span></h4>
-            <div class="entity-list">
-              {#each currentRoom.items as item}
-                <div class="entity-item">
-                  <span class="entity-name">{item.name}</span>
-                  {#if item.obtainable}
-                    <button class="btn-action btn-take" disabled={combatState === "EN_COMBAT"} on:click={() => callTake(item.id)}>Take</button>
-                  {:else}
-                    <span class="scenery-tag">Scenery</span>
-                  {/if}
+        <div class="nearby-content">
+          {#if nearbyTab === 'npc'}
+            {#each currentRoom.npcs as npc}
+              <div class="nearby-card" class:selected={selectedEntity === npc.id}>
+                <span class="nearby-icon" class:hostile={npc.role === 'enemy'}><Icon name={npc.role === 'enemy' ? 'sword' : npc.role === 'quest_giver' ? 'flag' : 'person'} size={22}/></span>
+                <div class="nearby-detail"><strong>{npc.name}</strong><span>{npc.description || (npc.role === 'enemy' ? 'Hostile creature' : npc.role === 'quest_giver' ? 'Has a quest for you' : 'Available to talk')}</span></div>
+                <div class="npc-buttons">
+                  {#if npc.role !== 'enemy'}<button class="btn-action btn-talk" disabled={combatState === 'EN_COMBAT'} on:click={() => callTalk(npc.id)}>Talk <Icon name="arrow" size={12}/></button>{/if}
+                  {#if npc.role === 'quest_giver' || npc.unknownRole}<button class="btn-action btn-take" disabled={combatState === 'EN_COMBAT'} on:click={() => callQuest(npc.id)}>Quest <Icon name="flag" size={12}/></button>{/if}
+                  {#if npc.role === 'enemy' || npc.unknownRole}<button class="btn-action btn-attack" on:click={() => callAttack(npc.id)}>Attack <Icon name="sword" size={12}/></button>{/if}
                 </div>
-              {/each}
-              {#if currentRoom.items.length === 0}
-                <div class="empty-list">Nothing to collect here.</div>
-              {/if}
-            </div>
-          </div>
-
-          <!-- NPCS IN ROOM -->
-          <div class="entity-card">
-            <h4>Characters <span class="count">{currentRoom.npcs.length}</span></h4>
-            <div class="entity-list">
-              {#each currentRoom.npcs as npc}
-                <div class="entity-item">
-                  <span class="entity-name">{npc.name}</span>
-                  <div class="npc-buttons">
-                    {#if npc.role !== 'enemy'}
-                      <button class="btn-action btn-talk" disabled={combatState === "EN_COMBAT"} on:click={() => callTalk(npc.id)}>Talk</button>
-                    {/if}
-                    {#if npc.role === 'quest_giver' || npc.unknownRole}
-                      <button class="btn-action btn-take" disabled={combatState === "EN_COMBAT"} on:click={() => callQuest(npc.id)}>Quest</button>
-                    {/if}
-                    {#if npc.role === 'enemy' || npc.unknownRole}
-                      <button class="btn-action btn-attack" on:click={() => callAttack(npc.id)}>Attack</button>
-                    {/if}
-                  </div>
-                </div>
-              {/each}
-              {#if currentRoom.npcs.length === 0}
-                <div class="empty-list">A quiet corner of the world.</div>
-              {/if}
-            </div>
-          </div>
-
-          <!-- PLAYERS IN ROOM -->
-          <div class="entity-card">
-            <h4>Travelers <span class="count">{currentRoom.players.length}</span></h4>
-            <div class="entity-list">
-              {#each currentRoom.players as player}
-                <div class="entity-item">
-                  <span class="player-tag {player === username ? 'player-self' : 'player-other'}">
-                    <span class="player-dot" aria-hidden="true"></span> {player} {player === username ? '(you)' : ''}
-                  </span>
-                </div>
-              {/each}
-              {#if currentRoom.players.length === 0}
-                <div class="empty-list">The road is yours for now.</div>
-              {/if}
-            </div>
-          </div>
+              </div>
+            {:else}<div class="empty-list">No characters nearby. Choose a path to keep exploring.</div>{/each}
+          {:else if nearbyTab === 'item'}
+            {#each currentRoom.items as item}
+              <div class="nearby-card" class:selected={selectedEntity === item.id}>
+                <span class="nearby-icon"><Icon name={item.obtainable ? 'bag' : 'landmark'} size={22}/></span>
+                <div class="nearby-detail"><strong>{item.name}</strong><span>{item.description || (item.obtainable ? 'You can pick this up' : 'Part of the surroundings')}</span></div>
+                {#if item.obtainable}<button class="btn-action btn-take" disabled={combatState === 'EN_COMBAT'} on:click={() => callTake(item.id)}>Take <Icon name="bag" size={12}/></button>{:else}<span class="scenery-tag">Scenery</span>{/if}
+              </div>
+            {:else}<div class="empty-list">No objects to collect in this location.</div>{/each}
+          {:else}
+            {#each currentRoom.players as player}
+              <div class="nearby-card"><span class="nearby-icon"><Icon name="person" size={22}/></span><div class="nearby-detail"><strong>{player}</strong><span>{player === username ? 'You · exploring this location' : 'Fellow adventurer'}</span></div><span class="player-dot"></span></div>
+            {:else}<div class="empty-list">No other travelers in this location.</div>{/each}
+          {/if}
         </div>
       </section>
 
@@ -663,13 +630,13 @@
 
         <!-- QUICK ACTION BUTTONS -->
         <div class="actions-section">
-          <h3>AT YOUR FINGERTIPS</h3>
+          <div class="hotbar-heading"><h3>QUICK ACTIONS</h3><span>1 — 5</span></div>
           <div class="action-buttons-grid">
-            <button class="btn-quick" on:click={callLook}>Look</button>
-            <button class="btn-quick" on:click={callStatus}>Status</button>
-            <button class="btn-quick" on:click={callQuests}>Quests</button>
-            <button class="btn-quick" on:click={callWho}>Who's here</button>
-            <button class="btn-quick" on:click={() => showGroupModal = true}>Party</button>
+            <button class="btn-quick" on:click={callLook} title="Inspect and refresh your surroundings (1)" aria-keyshortcuts="1"><kbd>1</kbd><Icon name="eye" size={22}/><span>Look</span></button>
+            <button class="btn-quick" on:click={callStatus} title="Refresh your health and combat state (2)" aria-keyshortcuts="2"><kbd>2</kbd><Icon name="heart" size={22}/><span>Status</span></button>
+            <button class="btn-quick" on:click={callQuests} title="Refresh your quest journal (3)" aria-keyshortcuts="3"><kbd>3</kbd><Icon name="book" size={22}/><span>Quests</span></button>
+            <button class="btn-quick" on:click={callWho} title="Refresh the players in your room and online (4)" aria-keyshortcuts="4"><kbd>4</kbd><Icon name="users" size={22}/><span>Players</span></button>
+            <button class="btn-quick party-action" on:click={() => showGroupModal = true} title="Create, join or manage your party (5)" aria-keyshortcuts="5"><kbd>5</kbd><Icon name="flag" size={22}/><span>Party</span></button>
           </div>
         </div>
       </aside>

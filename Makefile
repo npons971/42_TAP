@@ -94,6 +94,7 @@ test-integration: test-client
 
 test-gui: test-client build-frontend
 	./node scripts/test-gui-protocol.mjs
+	./node scripts/test-gui-map.mjs
 
 test-cli-pty: build-cli
 	python3 scripts/test-cli-pty.py

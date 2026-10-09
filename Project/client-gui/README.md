@@ -48,6 +48,17 @@ Une session graphique est nécessaire pour ouvrir la fenêtre.
 
 ## Commandes de jeu
 
+La vue principale affiche une carte locale des sorties de la salle, avec votre
+position au centre. Cliquez sur une destination pour vous déplacer ou sur un
+repère pour inspecter un personnage ou un objet dans **Nearby**. La carte peut
+être agrandie et refermée avec Échap. Elle utilise les données de LOOK ; le
+décor est stylisé, les positions ne sont pas des coordonnées géographiques.
+Les noms des lieux visités sont mémorisés pendant la session.
+
+La barre **Quick actions** propose LOOK, STATUS, QUESTS, WHO et GROUP avec
+icônes et infobulles. Les touches **1–5** déclenchent les mêmes actions hors
+champs de saisie, dialogues et carte agrandie.
+
 L'interface propose les déplacements, TAKE/DROP/USE, TALK/QUEST, ATTACK/DEFEND/FLEE,
 les quêtes et leur progression, les groupes CREATE/INVITE/JOIN/LEAVE et les chats
 GLOBAL/ROOM/GROUP. L'onglet des journaux est en lecture seule. Les commandes
