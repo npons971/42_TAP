@@ -35,17 +35,24 @@ case " ${ID:-} ${ID_LIKE:-} " in
   *" fedora "*|*" rhel "*)
     command -v rpm2cpio >/dev/null || { echo 'rpm2cpio est requis sur Fedora.' >&2; exit 1; }
     command -v cpio >/dev/null || { echo 'cpio est requis sur Fedora.' >&2; exit 1; }
-    if has_archive "gtk3-devel-*.$(uname -m).rpm" && \
+    if [[ "$ID" == fedora ]]; then
+      [[ -x "$repo/node" ]] || { echo 'Node local manquant. Lancez make install.' >&2; exit 1; }
+      "$repo/node" "$repo/scripts/fetch-webkit.mjs" "$ID" "$VERSION_ID"
+      while IFS= read -r filename; do
+        [[ "$filename" != */* && "$filename" == *.rpm ]] || { echo 'Liste des archives invalide.' >&2; exit 1; }
+        (cd "$sdk" && rpm2cpio "$cache/$filename" | cpio -idmu --quiet)
+      done < "$cache/.selected-archives"
+    elif has_archive "gtk3-devel-*.$(uname -m).rpm" && \
        has_archive "webkit2gtk4.1-devel-*.$(uname -m).rpm"; then
       echo "Archives GTK3 et WebKitGTK trouvées dans $cache ; téléchargement ignoré."
+      for package in "$cache"/*."$(uname -m)".rpm "$cache"/*.noarch.rpm; do
+        [[ -s "$package" ]] || continue
+        (cd "$sdk" && rpm2cpio "$package" | cpio -idmu --quiet)
+      done
     else
       echo "Placez les archives RPM GTK3/WebKitGTK 4.1 et leurs dépendances dans $cache, puis relancez make install." >&2
       exit 1
     fi
-    for package in "$cache"/*."$(uname -m)".rpm "$cache"/*.noarch.rpm; do
-      [[ -s "$package" ]] || continue
-      (cd "$sdk" && rpm2cpio "$package" | cpio -idmu --quiet)
-    done
     ;;
   *" debian "*|*" ubuntu "*)
     command -v dpkg-deb >/dev/null || { echo 'dpkg-deb est requis sur Debian/Ubuntu.' >&2; exit 1; }

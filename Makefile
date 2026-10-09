@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install install-webkit clean build-server run-server test-server build-cli run-cli test test-cli-pty gui run-gui dev-gui build-gui check-gui test-gui build-frontend test-client test-integration test-all frontend-deps fetch-webkit
+.PHONY: help install install-webkit clean build build-server run-server run-all test-server build-cli run-cli test test-cli-pty gui run-gui dev-gui build-gui check-gui test-gui build-frontend test-client test-integration test-all frontend-deps fetch-webkit
 
 PROJECT_ROOT := $(CURDIR)
 GO := $(PROJECT_ROOT)/go
@@ -22,6 +22,8 @@ export npm_config_cache := $(PROJECT_ROOT)/.npm-cache
 
 help:
 	@printf '%s\n' '42 TAP — commandes principales' \
+	  '  make run-all      Lance le serveur ici et les deux clients dans deux terminaux' \
+	  '  make build        Compile le serveur, le CLI et le GUI' \
 	  '  make gui          Compile et ouvre le GUI ; démarre un serveur local si nécessaire' \
 	  '  make dev-gui      Même lancement avec rechargement du frontend' \
 	  '  make build-gui    Compile le GUI sans ouvrir de fenêtre' \
@@ -31,6 +33,11 @@ help:
 	  '  make test-all     Tests serveur, clients et interface' \
 	  '  make install      Installe les outils dans le dépôt' \
 	  '' 'Serveur distant : make gui GUI_HOST=adresse GUI_PORT=4242 GUI_SERVER=off'
+
+build: build-server build-cli build-gui
+
+run-all:
+	+bash scripts/run-all.sh "$(MAKE)" "$(SERVER_ADDR)" "$(WORLD_FILE)" "$(CLI_ADDR)" "$(GUI_HOST)" "$(GUI_PORT)"
 
 gui: build-server build-gui
 	$(NODE) scripts/run-gui.mjs --host "$(GUI_HOST)" --port "$(GUI_PORT)" --server "$(GUI_SERVER)" --world "$(WORLD_FILE)"
@@ -106,7 +113,7 @@ install-webkit: .webkit-sdk/.installed
 	bash scripts/install-webkit.sh --check
 
 fetch-webkit: node
-	@. /etc/os-release; $(NODE) scripts/fetch-webkit.mjs "$$ID" "$${VERSION_CODENAME:-}" $(WEBKIT_FETCH_ARGS)
+	@. /etc/os-release; $(NODE) scripts/fetch-webkit.mjs "$$ID" "$${VERSION_CODENAME:-$$VERSION_ID}" $(WEBKIT_FETCH_ARGS)
 
 # Wails binding generation removes CC; Go must still find a local gcc.
 gcc: cc
@@ -164,7 +171,7 @@ wails: .go-work/bin/wails npm scripts/wails-local.sh Makefile
 .go-work/bin/wails: go
 	GOPATH="$(CURDIR)/.go-work" GOCACHE="$(CURDIR)/.go-cache" ./go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
 
-.webkit-sdk/.installed: scripts/install-webkit.sh scripts/fetch-webkit.mjs node
+.webkit-sdk/.installed: scripts/install-webkit.sh scripts/fetch-webkit.mjs scripts/fetch-webkit-fedora.mjs node
 	bash scripts/install-webkit.sh
 	touch $@
 
