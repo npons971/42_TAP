@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
   // Connection State
   let connected = false;
@@ -7,42 +7,27 @@
   let connectionError = "";
   let host = "127.0.0.1";
   let port = 4242;
-  let username = "novanns";
+  let username = "";
 
   // Player & Game State
   let playerHP = 100;
   let playerMaxHP = 100;
   let combatState = "HORS_COMBAT";
   let currentTarget = null;
-  let roomPlayersCount = 1;
-  let serverPlayersCount = 1;
+  let roomPlayersCount = 0;
+  let serverPlayersCount = 0;
 
   // Current Room State
-  let currentRoom = {
-    id: "loc.town_square",
-    name: "Village Square",
-    description: "A bustling cobblestone square bathed in gentle sunlight. In the center stands a weathered stone fountain. Connect to server to explore.",
-    exits: { east: "Market", north: "Garden", west: "Dark Alley" },
-    items: [],
-    npcs: [],
-    players: []
-  };
+  function emptyRoom() {
+    return { id: "", name: "Loading room…", description: "", exits: {}, items: [], npcs: [], players: [] };
+  }
+  let currentRoom = emptyRoom();
 
   // Room names mapping for intuitive navigation
-  const roomNames = {
-    "loc.town_square": "Village Square",
-    "loc.market": "Central Market",
-    "loc.tavern": "The Slumbering Dragon",
-    "loc.dark_alley": "Dark Alley",
-    "loc.cellar": "Tavern Cellar",
-    "loc.sewers": "Damp Sewers",
-    "loc.ruins_gate": "Ruins Gate",
-    "loc.ruins_den": "Cutthroat's Den",
-    "loc.garden": "Overgrown Garden"
-  };
+  let roomNames = {};
 
   function getDestName(destId) {
-    return roomNames[destId] || destId.replace(/^loc\./, '').replace(/_/g, ' ');
+    return roomNames[destId] || String(destId).replace(/^loc\./, '').replace(/_/g, ' ');
   }
 
   // Inventory & Quests
@@ -66,14 +51,29 @@
     group: [],
     logs: []
   };
+  const MESSAGE_LIMIT = 500;
+  let actionError = "";
+  let groupStatus = "";
+  let refreshTimer = null;
+  const pendingRefresh = new Set();
+
+  // An action's reply and room event often request the same data.
+  function scheduleRefresh(...methods) {
+    if (!connected) return;
+    methods.forEach(method => pendingRefresh.add(method));
+    if (refreshTimer !== null) return;
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      const methods = [...pendingRefresh];
+      pendingRefresh.clear();
+      methods.forEach(method => invoke(method));
+    }, 50);
+  }
 
   // Auto-scroll chat view to bottom
-  function scrollToBottom() {
-    setTimeout(() => {
-      if (chatViewport) {
-        chatViewport.scrollTop = chatViewport.scrollHeight;
-      }
-    }, 0);
+  async function scrollToBottom() {
+    await tick();
+    if (chatViewport) chatViewport.scrollTop = chatViewport.scrollHeight;
   }
 
   // Helper for adding messages
@@ -81,18 +81,18 @@
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const msg = { time, sender, text, type };
     if (messages[channel]) {
-      messages[channel] = [...messages[channel], msg];
+      messages[channel] = [...messages[channel], msg].slice(-MESSAGE_LIMIT);
     }
     // Also push system events or chat into logs
     if (channel !== 'logs') {
-      messages.logs = [...messages.logs, { time, sender: `[${channel.toUpperCase()}] ${sender}`, text, type }];
+      messages.logs = [...messages.logs, { time, sender: `[${channel.toUpperCase()}] ${sender}`, text, type }].slice(-MESSAGE_LIMIT);
     }
     scrollToBottom();
   }
 
   function addLog(text, type = "info") {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    messages.logs = [...messages.logs, { time, sender: "SYSTEM", text, type }];
+    messages.logs = [...messages.logs, { time, sender: "SYSTEM", text, type }].slice(-MESSAGE_LIMIT);
     scrollToBottom();
   }
 
@@ -101,27 +101,63 @@
     return window?.go?.main?.App;
   }
 
+  function resetSession() {
+    connected = false;
+    connecting = false;
+    currentRoom = emptyRoom();
+    roomNames = {};
+    inventory = [];
+    quests = [];
+    playerHP = 100;
+    playerMaxHP = 100;
+    combatState = "HORS_COMBAT";
+    currentTarget = null;
+    roomPlayersCount = 0;
+    serverPlayersCount = 0;
+    activeDialogue = null;
+    showGroupModal = false;
+    groupTarget = "";
+    groupStatus = "";
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+    pendingRefresh.clear();
+    chatInput = "";
+    actionError = "";
+    messages = { global: [], room: [], group: [], logs: [] };
+  }
+
   onMount(() => {
-    addLog("Client GUI initialized. Ready to connect to RFC 42TAP Server.", "info");
+    addLog("Ready to connect to a 42 TAP server.", "info");
+    getBackend()?.ConnectionDefaults?.().then(defaults => {
+      if (!connecting && !connected) { host = defaults.host; port = defaults.port; }
+    }).catch(err => addLog(String(err), "error"));
 
     if (window.runtime) {
-      window.runtime.EventsOn("server_reply", ({kind, command, payload, request}) => {
+      const unsubscribe = [window.runtime.EventsOn("server_reply", ({kind, command, payload, request}) => {
         if (kind === "OK") handleServerOK(payload, command); else handleServerERR(payload, command, request);
-      });
-      window.runtime.EventsOn("server_evt", (payload) => handleServerEVT(payload));
+      }),
+      window.runtime.EventsOn("server_evt", (payload) => handleServerEVT(payload)),
       window.runtime.EventsOn("disconnected", (msg) => {
-        connected = false;
-        connecting = false;
-        addLog(msg || "Disconnected from server.", "error");
-      });
+        const wasConnecting = connecting;
+        resetSession();
+        if (wasConnecting && !connectionError) connectionError = msg || "Connection closed before login.";
+        else if (msg !== "Client disconnected") connectionError = msg || "Connection lost. Connect again to resume.";
+        addLog(msg || "Disconnected from server.", "info");
+      }),
       window.runtime.EventsOn("server_error", (err) => {
+        actionError = String(err);
         addLog(`Network error: ${err}`, "error");
-      });
+      })];
+      return () => unsubscribe.forEach(off => off());
     }
   });
 
   // Server Payload Parsing
   function handleServerOK(payload, command = "") {
+    if (command === "GROUP") {
+      groupStatus = "Party updated. Check Group Chat for notifications.";
+      addMessage("group", "GROUP", groupStatus, "system");
+    }
     if (!payload) return;
     addLog(`S: OK ${payload}`, "ok");
 
@@ -130,15 +166,15 @@
       connecting = false;
       connectionError = "";
       addMessage("global", "SYSTEM", `Connected successfully as ${username}!`, "system");
-      // Request initial room look, inventory, and status
-      setTimeout(() => {
-        callLook();
-        callInventory();
-        callStatus();
-        callWho();
-      }, 150);
+      scheduleRefresh("Look", "Inventory", "Status", "Who", "Quests");
       return;
     }
+
+    if (["ATTACK", "DEFEND", "FLEE"].includes(command)) {
+      scheduleRefresh("Status", "Look", "Quests");
+      return;
+    }
+    if (["QUEST", "TALK", "TALKJSON"].includes(command)) scheduleRefresh("Quests");
 
     // Try parsing JSON payloads (LOOK, STATUS, INVENTORY, WHO, QUESTS)
     if (payload.startsWith("{") || payload.startsWith("[")) {
@@ -156,7 +192,8 @@
             npcs: normalizeNPCs(data.npcs || []),
             players: data.players || []
           };
-          roomPlayersCount = (data.players ? data.players.length : 1);
+          roomNames = { ...roomNames, [currentRoom.id]: currentRoom.name };
+          roomPlayersCount = currentRoom.players.length;
           return;
         }
 
@@ -165,7 +202,7 @@
           playerHP = data.hp;
           playerMaxHP = data.max_hp || 100;
           combatState = data.state || (data.status === "combat" ? "EN_COMBAT" : "HORS_COMBAT");
-          currentTarget = data.combat || null;
+          currentTarget = typeof data.combat === "string" ? data.combat : data.combat?.target_id || null;
           return;
         }
 
@@ -189,8 +226,9 @@
 
         // TALK payload
         if (data.npc && data.dialogue) {
-          activeDialogue = { npc: data.npc, text: data.dialogue };
-          addMessage("room", data.npc, data.dialogue, "dialogue");
+          const text = Array.isArray(data.dialogue) ? data.dialogue.join("\n") : String(data.dialogue);
+          activeDialogue = { npc: data.npc, text };
+          addMessage("room", data.npc, text, "dialogue");
           return;
         }
       } catch (e) {
@@ -206,11 +244,12 @@
       serverPlayersCount = Number(payload.slice(8));
     } else if (payload.startsWith("room=")) {
       // Room changed, refresh look
-      callLook();
+      scheduleRefresh("Look");
     } else if (payload.startsWith("taken=") || payload.startsWith("dropped=")) {
       // Item action confirmed, refresh room & inventory
-      callLook();
-      callInventory();
+      scheduleRefresh("Look", "Inventory", "Quests");
+    } else if (payload.startsWith("used=")) {
+      scheduleRefresh("Inventory", "Status", "Quests");
     }
   }
 
@@ -228,7 +267,7 @@
     return rawNPCs.map(npc => {
       if (typeof npc === 'string') {
         const cleanName = npc.replace(/^npc\./, '').replace(/_/g, ' ');
-        return { id: npc, name: cleanName, role: 'dialogue' };
+        return { id: npc, name: cleanName, role: 'dialogue', unknownRole: true };
       }
       return { id: npc.id, name: npc.name || npc.id, role: npc.role || 'dialogue' };
     });
@@ -238,12 +277,13 @@
     const backend = getBackend();
     if (/^400 (INVALID_ARGUMENTS|UNKNOWN_COMMAND)\b/.test(payload)) {
       const fallback = request === "LOOK DETAILS" ? "LOOK" : request === "INVENTORY DETAILS" ? "INVENTORY" : request.startsWith("TALKJSON ") ? request.replace(/^TALKJSON /, "TALK ") : null;
-      if (fallback && backend) { backend.SendCommand(fallback).catch(e => addLog(String(e), "error")); return; }
+      if (fallback && backend) { invoke("SendCommand", fallback); return; }
     }
     if (command === "CONNECT") {
       connecting = false; connected = false; connectionError = payload;
       if (backend) backend.Disconnect().catch(e => addLog(String(e), "error"));
     }
+    actionError = payload;
     addLog(`S: ERR ${payload}`, "error");
     addMessage("room", "SERVER", `Error: ${payload}`, "error");
     if (connecting) {
@@ -273,153 +313,106 @@
       const targetUser = parts[3] || "";
       const text = `${targetUser} ${action === "ENTER" ? "entered" : "left"} the room.`;
       addMessage("room", "ROOM", text, "presence");
-      callLook();
-      callWho();
+      scheduleRefresh("Look", "Who");
     } else if (evtType === "COMBAT") {
       addMessage("room", "COMBAT", rest, "combat");
-      callStatus();
+      scheduleRefresh("Status", "Look", "Quests");
     } else if (evtType === "ITEM") {
       const action = parts[2] || ""; // TAKE or DROP
       const actor = parts[3] || "";
       const itemId = parts[4] || "";
       const cleanItem = itemId.replace(/^item\./, '').replace(/_/g, ' ');
-      const actionVerb = action === "TAKE" ? "picked up" : "dropped";
+      const actionVerb = { TAKE: "picked up", DROP: "dropped", USE: "used", DELIVER: "delivered", REWARD: "received" }[action] || action.toLowerCase();
       const text = `${actor} ${actionVerb} ${cleanItem} (${itemId}).`;
       addMessage("room", "ROOM", text, "item");
-      callLook();
+      scheduleRefresh("Look");
       if (parts[3] === username.trim() && ["USE", "DELIVER", "REWARD"].includes(parts[2])) {
-        callInventory();
-        callStatus();
+        scheduleRefresh("Inventory", "Status", "Quests");
       }
     }
   }
 
-  // User Actions
+  // Keep network failures visible and prevent unhandled action promises.
+  async function invoke(method, ...args) {
+    if (!connected) return false;
+    const backend = getBackend();
+    try {
+      if (!backend?.[method]) throw new Error("Wails backend unavailable. Launch with make gui.");
+      actionError = "";
+      await backend[method](...args);
+      return true;
+    } catch (err) {
+      actionError = String(err);
+      addLog(actionError, "error");
+      return false;
+    }
+  }
+
   async function handleConnect() {
-    connecting = true;
+    if (connecting) return;
     connectionError = "";
-    username = (username || "").trim().toLowerCase();
-    if (!username.match(/^[a-z][a-z0-9_]{2,19}$/)) {
-      connectionError = "Username must be 3-20 lowercase alphanumeric characters (or underscores), starting with a letter.";
-      connecting = false;
+    username = (username || "").trim();
+    host = (host || "").trim();
+    const userLength = [...username].length;
+    if (userLength < 3 || userLength > 20 || !/^[\p{Ll}][\p{Ll}\p{Nd}_]*$/u.test(username)) {
+      connectionError = "Use 3–20 lowercase letters, digits or underscores, starting with a lowercase letter.";
+      return;
+    }
+    if (!host || /\s/u.test(host) || !Number.isInteger(Number(port)) || Number(port) < 1 || Number(port) > 65535) {
+      connectionError = "Enter a server host and a port between 1 and 65535.";
       return;
     }
     const backend = getBackend();
     if (!backend) {
-      connectionError = "Wails backend not available";
-      connecting = false;
+      connectionError = "Launch the desktop application with make gui.";
       return;
     }
+    resetSession();
+    connecting = true;
     try {
-      await backend.Connect(host, parseInt(port, 10), username);
+      await backend.Connect(host, Number(port), username);
     } catch (err) {
-      connectionError = err.toString();
+      connectionError = String(err);
       connecting = false;
-      addLog(`Connection failed: ${err}`, "error");
+      addLog("Connection failed: " + err, "error");
     }
   }
 
   async function handleDisconnect() {
-    const backend = getBackend();
-    if (backend) {
-      await backend.Disconnect();
+    try { await getBackend()?.Disconnect(); }
+    catch (err) { addLog(String(err), "error"); }
+    finally { resetSession(); connectionError = ""; }
+  }
+
+  const callMove = direction => invoke("Move", direction);
+  const callLook = () => invoke("Look");
+  const callTake = id => invoke("Take", id);
+  const callDrop = id => invoke("Drop", id);
+  const callTalk = id => invoke("Talk", id);
+  const callAttack = id => invoke("Attack", id);
+  const callInventory = () => invoke("Inventory");
+  const callStatus = () => invoke("Status");
+  const callQuests = () => invoke("Quests");
+  const callWho = () => invoke("Who");
+  const callQuest = id => invoke("Quest", id);
+  const callUse = id => invoke("SendCommand", "USE " + id);
+  const callDefend = () => invoke("SendCommand", "DEFEND");
+  const callFlee = () => invoke("SendCommand", "FLEE");
+  function callGroup(action, target = "") {
+    target = target.trim();
+    if (["INVITE", "JOIN"].includes(action) && !target) {
+      actionError = "Enter the player's username (the leader for JOIN).";
+      return false;
     }
-    connected = false;
-    connecting = false;
-    connectionError = "";
-    inventory = [];
-    currentRoom.players = [];
+    return invoke("Group", action, target);
   }
-
-  async function callMove(direction) {
-    const backend = getBackend();
-    if (backend) await backend.Move(direction);
-  }
-
-  async function callLook() {
-    const backend = getBackend();
-    if (backend) await backend.Look();
-  }
-
-  async function callTake(itemId) {
-    const backend = getBackend();
-    if (backend) await backend.Take(itemId);
-  }
-
-  async function callDrop(itemId) {
-    const backend = getBackend();
-    if (backend) await backend.Drop(itemId);
-  }
-
-  async function callTalk(npcId) {
-    const backend = getBackend();
-    if (backend) await backend.Talk(npcId);
-  }
-
-  async function callAttack(npcId) {
-    const backend = getBackend();
-    if (backend) await backend.Attack(npcId);
-  }
-
-  async function callInventory() {
-    const backend = getBackend();
-    if (backend) await backend.Inventory();
-  }
-
-  async function callStatus() {
-    const backend = getBackend();
-    if (backend) await backend.Status();
-  }
-
-  async function callQuests() {
-    const backend = getBackend();
-    if (backend) await backend.Quests();
-  }
-
-  async function callWho() {
-    const backend = getBackend();
-    if (backend) await backend.Who();
-  }
-
-  async function callGroup(action, target) {
-    const backend = getBackend();
-    if (backend) {
-      await backend.Group(action, target || "");
-      addLog(`C: GROUP ${action} ${target || ''}`.trim(), "info");
-    }
-  }
-
-  async function callDefend() {
-    const backend = getBackend();
-    if (backend) {
-      await backend.SendCommand("DEFEND");
-      addLog("C: DEFEND", "info");
-    }
-  }
-
-  async function callFlee() {
-    const backend = getBackend();
-    if (backend) {
-      await backend.SendCommand("FLEE");
-      addLog("C: FLEE", "info");
-    }
-  }
-
   async function handleSendMessage() {
     const text = chatInput.trim();
-    if (!text) return;
-    const backend = getBackend();
-    if (backend) {
-      const channel = activeTab === "logs" ? "GLOBAL" : activeTab.toUpperCase();
-      await backend.Chat(channel, text);
-      chatInput = "";
-    }
+    if (!text || activeTab === "logs") return;
+    if (await invoke("Chat", activeTab.toUpperCase(), text)) chatInput = "";
   }
-
   function handleKeyDown(e) {
-    if (e.key === "Enter") {
-      handleSendMessage();
-    }
+    if (e.key === "Enter" && !e.isComposing) handleSendMessage();
   }
 </script>
 
@@ -430,22 +423,22 @@
       <div class="connect-card">
         <div class="retro-badge">42 CURRICULUM PROJECT</div>
         <h1 class="glow-title">THE ANSWER PROTOCOL</h1>
-        <p class="subtitle">Multiplayer Retro Text Adventure Client</p>
+        <p class="subtitle">Choose your username and connect to start playing.</p>
 
         <form class="connect-form" on:submit|preventDefault={handleConnect}>
           <div class="form-group">
             <label for="host">SERVER HOST</label>
-            <input id="host" type="text" bind:value={host} placeholder="127.0.0.1" required />
+            <input id="host" type="text" bind:value={host} placeholder="127.0.0.1" required disabled={connecting} />
           </div>
 
           <div class="form-group">
             <label for="port">PORT</label>
-            <input id="port" type="number" bind:value={port} placeholder="4242" required />
+            <input id="port" type="number" bind:value={port} placeholder="4242" min="1" max="65535" step="1" required disabled={connecting} />
           </div>
 
           <div class="form-group">
             <label for="username">ADVENTURER USERNAME</label>
-            <input id="username" type="text" bind:value={username} placeholder="Novanns" required maxlength="16" />
+            <input id="username" type="text" bind:value={username} placeholder="e.g. aris" required disabled={connecting} autocomplete="username" />
           </div>
 
           {#if connectionError}
@@ -453,7 +446,7 @@
           {/if}
 
           <button class="btn-primary" type="submit" disabled={connecting}>
-            {connecting ? "CONNECTING..." : "ENTER THE REALM"}
+            {connecting ? "CONNECTING..." : "CONNECT & PLAY"}
           </button>
         </form>
       </div>
@@ -475,6 +468,7 @@
       <button class="btn-disconnect" on:click={handleDisconnect}>QUIT / LEAVE</button>
     </header>
 
+    {#if actionError}<div class="action-error" role="alert">{actionError}</div>{/if}
     <div class="game-grid">
       <!-- LEFT COLUMN: WORLD EXPLORATION -->
       <section class="panel room-panel">
@@ -491,7 +485,7 @@
             <h4>AVAILABLE EXITS</h4>
             <div class="exits-grid">
               {#each Object.entries(currentRoom.exits) as [dir, dest]}
-                <button class="btn-exit" on:click={() => callMove(dir)}>
+                <button class="btn-exit" disabled={combatState === "EN_COMBAT"} on:click={() => callMove(dir)}>
                   <span class="dir-tag">{dir.toUpperCase()}</span>
                   <span class="dest-tag">{getDestName(dest)}</span>
                 </button>
@@ -513,7 +507,7 @@
                 <div class="entity-item">
                   <span class="entity-name">{item.name}</span>
                   {#if item.obtainable}
-                    <button class="btn-action btn-take" on:click={() => callTake(item.id)}>TAKE</button>
+                    <button class="btn-action btn-take" disabled={combatState === "EN_COMBAT"} on:click={() => callTake(item.id)}>TAKE</button>
                   {:else}
                     <span class="scenery-tag">SCENERY</span>
                   {/if}
@@ -533,8 +527,15 @@
                 <div class="entity-item">
                   <span class="entity-name">{npc.name}</span>
                   <div class="npc-buttons">
-                    <button class="btn-action btn-talk" on:click={() => callTalk(npc.id)}>TALK</button>
-                    <button class="btn-action btn-attack" on:click={() => callAttack(npc.id)}>ATTACK</button>
+                    {#if npc.role !== 'enemy'}
+                      <button class="btn-action btn-talk" disabled={combatState === "EN_COMBAT"} on:click={() => callTalk(npc.id)}>TALK</button>
+                    {/if}
+                    {#if npc.role === 'quest_giver' || npc.unknownRole}
+                      <button class="btn-action btn-take" disabled={combatState === "EN_COMBAT"} on:click={() => callQuest(npc.id)}>QUEST</button>
+                    {/if}
+                    {#if npc.role === 'enemy' || npc.unknownRole}
+                      <button class="btn-action btn-attack" on:click={() => callAttack(npc.id)}>ATTACK</button>
+                    {/if}
                   </div>
                 </div>
               {/each}
@@ -604,7 +605,10 @@
             {#each inventory as item}
               <div class="inventory-item">
                 <span class="item-name">{item.name || item.id}</span>
-                <button class="btn-action btn-drop" on:click={() => callDrop(item.id)}>DROP</button>
+                <div class="npc-buttons">
+                  <button class="btn-action btn-talk" disabled={combatState === "EN_COMBAT"} on:click={() => callUse(item.id)}>USE</button>
+                  <button class="btn-action btn-drop" disabled={combatState === "EN_COMBAT"} on:click={() => callDrop(item.id)}>DROP</button>
+                </div>
               </div>
             {/each}
             {#if inventory.length === 0}
@@ -616,7 +620,7 @@
         <!-- ACTIVE QUESTS TRACKER -->
         <div class="quests-section">
           <div class="panel-header-sub">
-            <h3>ACTIVE QUESTS ({quests.length})</h3>
+            <h3>QUEST TRACKER ({quests.length})</h3>
             <button class="btn-tiny" on:click={callQuests}>REFRESH</button>
           </div>
           <div class="quests-list">
@@ -627,6 +631,7 @@
                   <span class="quest-status-badge {q.status || 'active'}">{q.status || 'ACTIVE'}</span>
                 </div>
                 <p class="quest-desc">{q.description || ''}</p>
+                {#if q.progress}<div class="quest-meta">Progress: {q.progress}</div>{/if}
                 {#if q.giver}
                   <div class="quest-meta">Giver: <strong>{q.giver.replace(/^npc\./, '')}</strong></div>
                 {/if}
@@ -686,11 +691,13 @@
         <span class="channel-indicator">#{activeTab.toUpperCase()}:</span>
         <input
           type="text"
-          placeholder="Type message and press Enter..."
+          aria-label="Chat message"
+          disabled={activeTab === "logs"}
+          placeholder={activeTab === "logs" ? "System logs — read only" : "Type message and press Enter..."}
           bind:value={chatInput}
           on:keydown={handleKeyDown}
         />
-        <button class="btn-send" on:click={handleSendMessage}>SEND</button>
+        <button class="btn-send" disabled={activeTab === "logs" || !chatInput.trim()} on:click={handleSendMessage}>SEND</button>
       </div>
     </section>
 
@@ -700,7 +707,7 @@
         <div class="dialogue-card" role="dialog" aria-modal="true" aria-label="NPC Dialogue">
           <div class="dialogue-header">
             <h3>{activeDialogue.npc} SPEAKS</h3>
-            <button class="btn-close" on:click={() => activeDialogue = null}>✕</button>
+            <button class="btn-close" aria-label="Close dialog" on:click={() => activeDialogue = null}>✕</button>
           </div>
           <p class="dialogue-speech">"{activeDialogue.text}"</p>
           <button class="btn-primary" on:click={() => activeDialogue = null}>CONTINUE</button>
@@ -716,14 +723,17 @@
             <h3>PARTY & GROUP ACTIONS</h3>
             <button class="btn-close" on:click={() => showGroupModal = false}>✕</button>
           </div>
-          <p class="subtitle" style="margin-bottom: 1rem;">Coordinate and adventure together with fellow players.</p>
+          <p class="subtitle" style="margin-bottom: 1rem;">Create a party, invite a player, or enter a leader’s username to join.</p>
+          {#if actionError}<div class="error-badge" role="alert">{actionError}</div>{/if}
+          {#if groupStatus}<p class="group-status" role="status">{groupStatus}</p>{/if}
           <div class="form-group" style="margin-bottom: 1rem;">
             <label for="groupTarget">ADVENTURER USERNAME</label>
             <input id="groupTarget" type="text" bind:value={groupTarget} placeholder="e.g. aris" />
           </div>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button class="btn-action btn-talk" on:click={() => callGroup("INVITE", groupTarget)}>INVITE</button>
-            <button class="btn-action btn-take" on:click={() => callGroup("ACCEPT", groupTarget)}>ACCEPT</button>
+            <button class="btn-action btn-talk" on:click={() => callGroup("CREATE")}>CREATE PARTY</button>
+            <button class="btn-action btn-talk" disabled={!groupTarget.trim()} on:click={() => callGroup("INVITE", groupTarget)}>INVITE</button>
+            <button class="btn-action btn-take" disabled={!groupTarget.trim()} on:click={() => callGroup("JOIN", groupTarget)}>JOIN PARTY</button>
             <button class="btn-action btn-drop" on:click={() => callGroup("LEAVE", "")}>LEAVE PARTY</button>
             <button class="btn-primary" style="margin-left: auto; padding: 0.35rem 0.8rem;" on:click={() => showGroupModal = false}>CLOSE</button>
           </div>
@@ -740,7 +750,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", monospace;
     background-color: #0d1117;
     color: #e6edf3;
-    overflow: hidden;
+    overflow: auto;
   }
 
   .app-container {
@@ -953,6 +963,8 @@
     font-family: monospace;
   }
 
+  .room-panel { overflow-y: auto; }
+
   .room-content {
     padding: 0.8rem;
   }
@@ -1082,7 +1094,7 @@
   .empty-list, .empty-hint { font-size: 0.8rem; color: #6e7681; font-style: italic; }
 
   /* VITALITY */
-  .status-panel { padding: 0.8rem; gap: 0.8rem; }
+  .status-panel { overflow-y: auto; padding: 0.8rem; gap: 0.8rem; }
   .status-tag { font-size: 0.75rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
   .status-tag.in-combat { background: #b62324; color: #fff; }
   .status-tag.out-combat { background: #238636; color: #fff; }
@@ -1132,7 +1144,7 @@
   .btn-quick:hover { border-color: #58a6ff; color: #fff; }
 
   /* CHAT PANEL */
-  .chat-panel { margin: 0 0.75rem 0.75rem; height: 210px; }
+  .chat-panel { flex-shrink: 0; margin: 0 0.75rem 0.75rem; height: 210px; }
   .tabs-header { display: flex; background: #0d1117; border-bottom: 1px solid #21262d; }
   .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: #8b949e; padding: 0.5rem 0.9rem; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
   .tab-btn.active { color: #58a6ff; border-bottom-color: #58a6ff; background: #161b22; }
@@ -1157,5 +1169,29 @@
   .dialogue-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
   .dialogue-header h3 { margin: 0; font-size: 1.1rem; color: #58a6ff; }
   .btn-close { background: none; border: none; color: #8b949e; font-size: 1.1rem; cursor: pointer; }
-  .dialogue-speech { font-size: 1rem; line-height: 1.5; color: #e3b341; font-style: italic; margin-bottom: 1.5rem; }
+  .dialogue-speech { white-space: pre-wrap; font-size: 1rem; line-height: 1.5; color: #e3b341; font-style: italic; margin-bottom: 1.5rem; }
+  .action-error { background: #3b171b; color: #ffb4b0; padding: 0.5rem 1rem; }
+  .group-status { color: #3fb950; overflow-wrap: anywhere; }
+  .msg-text, .entity-name, .item-name { overflow-wrap: anywhere; min-width: 0; }
+  .msg-text { white-space: pre-wrap; }
+  .npc-buttons { flex-wrap: wrap; justify-content: flex-end; }
+  .connect-card, .dialogue-card { max-width: calc(100vw - 2rem); }
+  .modal-backdrop { padding: 1rem; overflow-y: auto; }
+  .dialogue-card { max-height: calc(100vh - 2rem); overflow-y: auto; }
+  .connect-overlay { min-height: 100vh; height: auto; padding: 1rem 0; }
+  @media (max-width: 1000px) {
+    .entities-grid { grid-template-columns: 1fr; }
+    .top-bar, .stats-badges { flex-wrap: wrap; gap: 0.5rem; }
+    .entity-card { min-height: 100px; }
+    .action-buttons-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 700px), (max-height: 650px) {
+    .app-container { height: auto; min-height: 100vh; }
+    .game-grid { grid-template-columns: 1fr; }
+    .room-panel, .status-panel { overflow: visible; }
+    .inventory-list, .quests-list { max-height: 250px; flex: auto; }
+    .chat-panel { height: 260px; }
+    .tabs-header { flex-wrap: wrap; }
+    .connect-card { padding: 1.5rem; }
+  }
 </style>

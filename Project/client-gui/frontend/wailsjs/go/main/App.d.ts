@@ -7,6 +7,8 @@ export function Chat(arg1:string,arg2:string):Promise<void>;
 
 export function Connect(arg1:string,arg2:number,arg3:string):Promise<void>;
 
+export function ConnectionDefaults():Promise<Record<string, any>>;
+
 export function Disconnect():Promise<void>;
 
 export function Drop(arg1:string):Promise<void>;

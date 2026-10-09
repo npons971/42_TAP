@@ -1,4 +1,5 @@
-.PHONY: install clean build-server run-server test-server build-cli run-cli test test-cli-pty test-gui build-frontend test-client test-integration test-all
+.DEFAULT_GOAL := help
+.PHONY: help install install-webkit clean build-server run-server test-server build-cli run-cli test test-cli-pty gui run-gui dev-gui build-gui check-gui test-gui build-frontend test-client test-integration test-all frontend-deps fetch-webkit
 
 PROJECT_ROOT := $(CURDIR)
 GO := $(PROJECT_ROOT)/go
@@ -9,8 +10,41 @@ WAILS := $(PROJECT_ROOT)/wails
 SERVER_ADDR ?= :4242
 WORLD_FILE ?= data/world.json
 CLI_ADDR ?= 127.0.0.1:4242
+GUI_HOST ?= 127.0.0.1
+GUI_PORT ?= 4242
+GUI_SERVER ?= auto
+GUI_TAGS := webkit2_41
+GUI_DIR := Project/client-gui
+export PATH := $(PROJECT_ROOT):$(PATH)
 export GOPATH := $(CURDIR)/.go-work
 export GOCACHE := $(CURDIR)/.go-cache
+export npm_config_cache := $(PROJECT_ROOT)/.npm-cache
+
+help:
+	@printf '%s\n' '42 TAP — commandes principales' \
+	  '  make gui          Compile et ouvre le GUI ; démarre un serveur local si nécessaire' \
+	  '  make dev-gui      Même lancement avec rechargement du frontend' \
+	  '  make build-gui    Compile le GUI sans ouvrir de fenêtre' \
+	  '  make check-gui    Vérifie les outils locaux et GTK/WebKit' \
+	  '  make run-server   Lance uniquement le serveur TCP' \
+	  '  make run-cli      Lance le client terminal' \
+	  '  make test-all     Tests serveur, clients et interface' \
+	  '  make install      Installe les outils dans le dépôt' \
+	  '' 'Serveur distant : make gui GUI_HOST=adresse GUI_PORT=4242 GUI_SERVER=off'
+
+gui: build-server build-gui
+	$(NODE) scripts/run-gui.mjs --host "$(GUI_HOST)" --port "$(GUI_PORT)" --server "$(GUI_SERVER)" --world "$(WORLD_FILE)"
+
+run-gui: gui
+
+dev-gui: build-server install frontend-deps
+	$(NODE) scripts/run-gui.mjs --dev --host "$(GUI_HOST)" --port "$(GUI_PORT)" --server "$(GUI_SERVER)" --world "$(WORLD_FILE)"
+
+build-gui: install frontend-deps
+	$(WAILS) build -tags "$(GUI_TAGS)"
+
+check-gui:
+	bash scripts/check_42_env.sh
 
 build-server: go
 	mkdir -p .build
@@ -20,8 +54,8 @@ run-server: go
 	./go run ./cmd/server -addr "$(SERVER_ADDR)" -world "$(WORLD_FILE)"
 
 test-server: go
-	@if command -v gcc >/dev/null 2>&1; then \
-		./go test -race ./internal/server; \
+	@if test -x ./cc; then \
+		CGO_ENABLED=1 CC="$(PROJECT_ROOT)/cc" ./go test -race ./internal/server; \
 	else \
 		./go test ./internal/server; \
 	fi
@@ -34,23 +68,31 @@ run-cli: go
 	./go run ./cmd/client-cli -addr "$(CLI_ADDR)"
 
 test: go
-	@if command -v gcc >/dev/null 2>&1; then \
-		./go test -race ./...; \
+	@if test -x ./cc; then \
+		CGO_ENABLED=1 CC="$(PROJECT_ROOT)/cc" ./go test -race ./...; \
 	else \
 		./go test ./...; \
 	fi
 
-build-frontend: npm
+frontend-deps: $(GUI_DIR)/frontend/node_modules/.tap-installed
+
+$(GUI_DIR)/frontend/node_modules/.tap-installed: $(GUI_DIR)/frontend/package.json $(GUI_DIR)/frontend/package-lock.json npm
+	$(NPM) --prefix $(GUI_DIR)/frontend ci --no-audit --no-fund
+	touch $@
+
+build-frontend: frontend-deps
 	./npm --prefix Project/client-gui/frontend run build
 
 test-client: go
-	cd Project/client-gui && GOPATH="$(PROJECT_ROOT)/.go-work" GOCACHE="$(PROJECT_ROOT)/.go-cache" $(GO) test -v .
+	@if test -x ./cc; then \
+		cd $(GUI_DIR) && CGO_ENABLED=1 CC="$(PROJECT_ROOT)/cc" $(GO) test -race -v app.go app_test.go; \
+	else \
+		cd $(GUI_DIR) && $(GO) test -v app.go app_test.go; \
+	fi
 
 test-integration: test-client
 
-test-gui: go npm
-	cd Project/client-gui && GOPATH="$(PROJECT_ROOT)/.go-work" GOCACHE="$(PROJECT_ROOT)/.go-cache" ../../go test app.go app_test.go
-	cd Project/client-gui/frontend && ../../../npm run build
+test-gui: test-client build-frontend
 	./node scripts/test-gui-protocol.mjs
 
 test-cli-pty: build-cli
@@ -58,7 +100,32 @@ test-cli-pty: build-cli
 
 test-all: test-server test-client test-gui test-cli-pty
 
-install: go npm wails .webkit-sdk/.installed
+install: go npm gcc wails install-webkit
+
+install-webkit: .webkit-sdk/.installed
+	bash scripts/install-webkit.sh --check
+
+fetch-webkit: node
+	@. /etc/os-release; $(NODE) scripts/fetch-webkit.mjs "$$ID" "$${VERSION_CODENAME:-}" $(WEBKIT_FETCH_ARGS)
+
+# Wails binding generation removes CC; Go must still find a local gcc.
+gcc: cc
+	ln -sf cc gcc
+
+install_files/zig-x86_64-linux-0.15.2.tar.xz:
+	mkdir -p install_files
+	curl -fL --retry 3 -o $@.tmp https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz && \
+	  printf '%s  %s\n' 02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239 $@.tmp | sha256sum -c - && \
+	  mv $@.tmp $@
+
+.cc-sdk/zig: | install_files/zig-x86_64-linux-0.15.2.tar.xz
+	mkdir -p .cc-sdk
+	tar -xJf install_files/zig-x86_64-linux-0.15.2.tar.xz -C .cc-sdk --strip-components=1
+
+cc: .cc-sdk/zig scripts/cc-local.sh
+	printf '%s\n' '#!/bin/sh' 'repo="$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)"' \
+	  'exec bash "$$repo/scripts/cc-local.sh" "$$@"' > cc
+	chmod +x cc
 
 install_files/go1.27.1.linux-amd64.tar.gz:
 	mkdir -p install_files
@@ -89,21 +156,19 @@ npm: node Makefile
 	  'exec "$$repo/.node-sdk/bin/node" "$$repo/.node-sdk/lib/node_modules/npm/bin/npm-cli.js" "$$@"' > npm
 	chmod +x npm
 
-wails: go npm Makefile
-	GOPATH="$(CURDIR)/.go-work" GOCACHE="$(CURDIR)/.go-cache" ./go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+wails: .go-work/bin/wails npm scripts/wails-local.sh Makefile
 	printf '%s\n' '#!/bin/sh' 'repo="$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)"' \
-	  'export PATH="$$repo:$$PATH"' \
-	  'export GOPATH="$$repo/.go-work" GOCACHE="$$repo/.go-cache"' \
-	  'export PKG_CONFIG_PATH="$$repo/.webkit-sdk/usr/lib64/pkgconfig:$$repo/.webkit-sdk/usr/lib/x86_64-linux-gnu/pkgconfig:$$repo/.webkit-sdk/usr/lib/pkgconfig:$$repo/.webkit-sdk/usr/share/pkgconfig:$${PKG_CONFIG_PATH:-}"' \
-	  'export LD_LIBRARY_PATH="$$repo/.webkit-sdk/usr/lib64:$$repo/.webkit-sdk/usr/lib/x86_64-linux-gnu:$$repo/.webkit-sdk/usr/lib:$${LD_LIBRARY_PATH:-}"' \
-	  'exec "$$repo/.go-work/bin/wails" "$$@"' > wails
+	  'exec bash "$$repo/scripts/wails-local.sh" "$$@"' > wails
 	chmod +x wails
 
-.webkit-sdk/.installed: scripts/install-webkit.sh
+.go-work/bin/wails: go
+	GOPATH="$(CURDIR)/.go-work" GOCACHE="$(CURDIR)/.go-cache" ./go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+
+.webkit-sdk/.installed: scripts/install-webkit.sh scripts/fetch-webkit.mjs node
 	bash scripts/install-webkit.sh
 	touch $@
 
 clean:
 	@if test -d .go-work/pkg/mod; then find .go-work/pkg/mod -type d -exec chmod u+w {} +; fi
-	rm -rf .go-sdk .node-sdk .go-work .go-cache .npm-cache .webkit-sdk go node npm wails
+	rm -rf .go-sdk .node-sdk .cc-sdk .cc-cache .go-work .go-cache .npm-cache .webkit-sdk go node npm cc gcc wails
 	rm -rf install_files

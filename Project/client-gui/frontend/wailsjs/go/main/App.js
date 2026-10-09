@@ -14,6 +14,10 @@ export function Connect(arg1, arg2, arg3) {
   return window['go']['main']['App']['Connect'](arg1, arg2, arg3);
 }
 
+export function ConnectionDefaults() {
+  return window['go']['main']['App']['ConnectionDefaults']();
+}
+
 export function Disconnect() {
   return window['go']['main']['App']['Disconnect']();
 }

@@ -2,7 +2,7 @@
 
 > **Document Status**: `🟢 VALIDATED`  
 > **Assigned to**: Novanns (Dev B)  
-> **Last Updated**: 2026-10-07
+> **Last Updated**: 2026-10-09
 
 The GUI client provides an accessible, rich visual experience for the TAP adventure. It must remain interchangeable with the CLI client and strictly follow the RFC 42TAP protocol over a TCP connection.
 
@@ -60,11 +60,11 @@ The 42 subject permits any real graphical toolkit (curses is forbidden).
 
 ## 3. Mandatory GUI Features Checklist
 
-- [ ] **Real-Time Room Updates**: Parse `EVT ROOM PRESENCE ENTER <username>`, `EVT ROOM PRESENCE LEAVE <username>`, `EVT ROOM ITEM TAKE <username> <item_id>`, and `EVT ROOM ITEM DROP <username> <item_id>`. Update presence immediately and refresh `LOOK DETAILS` after item events when the item descriptor is needed. See the [implemented shared protocol](../../Commun/protocol/rfc_syntax.md).
-- [ ] **Item Buttons**: Single-click `TAKE` on ground items and `DROP` on inventory items.
-- [ ] **Separation of Views**: Independent tabs for Global Chat, Room Chat, Group Chat, and System/Debug Logs.
-- [ ] **NPC Dialog Display**: Pop-up modal or dedicated text frame displaying the dialogue when `TALK` is triggered.
-- [ ] **Live Player Counters**: Real-time counter badge for players in room and on server.
+- [x] **Real-Time Room Updates**: Parse `EVT ROOM PRESENCE ENTER <username>`, `EVT ROOM PRESENCE LEAVE <username>`, `EVT ROOM ITEM TAKE <username> <item_id>`, and `EVT ROOM ITEM DROP <username> <item_id>`. Update presence immediately and refresh `LOOK DETAILS` after item events when the item descriptor is needed. See the [implemented shared protocol](../../Commun/protocol/rfc_syntax.md).
+- [x] **Item Buttons**: Single-click `TAKE` on ground items and `DROP` on inventory items.
+- [x] **Separation of Views**: Independent tabs for Global Chat, Room Chat, Group Chat, and System/Debug Logs.
+- [x] **NPC Dialog Display**: Pop-up modal or dedicated text frame displaying the dialogue when `TALK` is triggered.
+- [x] **Live Player Counters**: Real-time counter badge for players in room and on server.
 
 ---
 
@@ -85,7 +85,7 @@ sequenceDiagram
     Note over Backend,Server: 2. Asynchronous Event Listening
     loop Goroutine listenServer()
         Server->>Backend: EVT ROOM PRESENCE ENTER bob\n
-        Backend->>UI: runtime.EventsEmit("evt_presence", {action:"ENTER", user:"bob"})
+        Backend->>UI: runtime.EventsEmit("server_evt", "ROOM PRESENCE ENTER bob")
         UI->>UI: Update players list & system logs
     end
 
@@ -103,9 +103,9 @@ sequenceDiagram
 4. **Resilience**: Detects network dropouts (`io.EOF`), closes resources gracefully, and triggers `runtime.EventsEmit("disconnected")`.
 
 ### 4.2 Svelte Frontend Responsibilities
-1. **Reactive Stores**: Stores `playerState`, `currentRoom`, `inventory`, `chatChannels`, and `combatState`.
+1. **Reactive Component State**: Tracks `playerState`, `currentRoom`, `inventory`, `chatChannels`, and `combatState`.
 2. **User Interactions**: Maps button clicks directly to backend Wails promises (`App.Move()`, `App.Take()`, `App.Talk()`).
-3. **Tabbed Chat**: Segregates `GLOBAL`, `ROOM`, `GROUP`, and `LOGS` into distinct tab views with persistent scrolling.
+3. **Tabbed Chat**: Segregates `GLOBAL`, `ROOM`, `GROUP`, and `LOGS` into distinct tab views with bounded history (500 messages per tab).
 
 
 ## RFC alignment (2026-10-07)
@@ -116,3 +116,17 @@ quest lists. The server_reply event carries its command/request to correlate
 responses; STATS and GROUP notifications are handled. Default username:
 novanns. Run make test-gui from the repository root for networking and frontend
 handler tests plus the frontend build.
+
+## Launch and review (2026-10-09)
+
+Run `make gui` from the repository root. It builds the client, uses an existing
+local TAP server or starts one, and stops only the server it owns when the GUI
+closes. `make dev-gui` enables Vite reload; `make build-gui` builds without
+opening a window. `make check-gui` diagnoses repository-local tools.
+See [the launch guide](../../../Project/client-gui/README.md).
+
+Svelte 5 uses `mount()` at startup. Connection registration is validated in Go
+with a bounded handshake before publishing the session. Group actions are
+CREATE/INVITE/JOIN/LEAVE; STATUS combat targets use their canonical target ID.
+Quests and combat room changes refresh automatically. The connection form
+accepts server-compatible Unicode usernames and validates ports.
