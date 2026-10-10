@@ -40,6 +40,12 @@
   // Group Management & Modal
   let showGroupModal = false;
   let groupTarget = "";
+  let groupLeaderTarget = "";
+  let groupId = "";
+  let groupLeader = "";
+  let groupMembers = [];
+  let groupInvitations = [];
+  let groupPending = false;
 
   // NPC Dialogue Modal
   let activeDialogue = null; // { npc: "...", text: "..." }
@@ -127,6 +133,12 @@
     activeItemInfo = null;
     showGroupModal = false;
     groupTarget = "";
+    groupLeaderTarget = "";
+    groupId = "";
+    groupLeader = "";
+    groupMembers = [];
+    groupInvitations = [];
+    groupPending = false;
     groupStatus = "";
     groupError = "";
     clearTimeout(refreshTimer);
@@ -145,7 +157,7 @@
 
     if (window.runtime) {
       const unsubscribe = [window.runtime.EventsOn("server_reply", ({kind, command, payload, request}) => {
-        if (kind === "OK") handleServerOK(payload, command); else handleServerERR(payload, command, request);
+        if (kind === "OK") handleServerOK(payload, command, request); else handleServerERR(payload, command, request);
       }),
       window.runtime.EventsOn("server_evt", (payload) => handleServerEVT(payload)),
       window.runtime.EventsOn("disconnected", (msg) => {
@@ -164,12 +176,37 @@
   });
 
   // Server Payload Parsing
-  function handleServerOK(payload, command = "") {
+  function handleServerOK(payload, command = "", request = "") {
     addLog(`S: OK${payload ? " " + payload : ""}`, "ok");
     if (command === "GROUP") {
+      if (payload.startsWith("{")) {
+        try {
+          const data = JSON.parse(payload);
+          if (typeof data.id === "string" && typeof data.leader === "string" && Array.isArray(data.members)) {
+            groupId = data.id;
+            groupLeader = data.leader;
+            groupMembers = data.members;
+          }
+        } catch (error) { addLog("Could not read group details.", "error"); }
+        return;
+      }
+      groupPending = false;
       groupError = "";
-      groupStatus = "Group updated. Check GROUP for notifications.";
+      const [, action, target] = request.trim().split(/\s+/);
+      if (action === "CREATE" || action === "JOIN") {
+        groupId = payload.replace(/^group=/, "");
+        groupLeader = action === "CREATE" ? username : target;
+        groupInvitations = [];
+      } else if (action === "LEAVE") {
+        groupId = ""; groupLeader = ""; groupMembers = [];
+      }
+      groupStatus = action === "CREATE" ? "Group created. Invite a player below to adventure together."
+        : action === "INVITE" ? `Invitation sent to ${target}. Waiting for them to join.`
+        : action === "JOIN" ? `You joined ${target}’s group.`
+        : action === "LEAVE" ? "You left the group." : "Group updated.";
       addMessage("group", "GROUP", groupStatus, "system", false);
+      refreshGroup();
+      return;
     }
     if (!payload) return;
 
@@ -352,7 +389,7 @@
 
   function showActionError(payload, command, request = "", sender = "SERVER") {
     actionError = payload;
-    if (command === "GROUP") { groupError = payload; groupStatus = ""; }
+    if (command === "GROUP") { groupPending = false; groupError = payload; groupStatus = ""; }
     // Use the failed request's scope even if the player has switched tabs.
     const channel = command === "CHAT" ? request.trim().split(/\s+/)[1]?.toLowerCase() : command === "GROUP" ? "group" : null;
     if (CHAT_CHANNELS.includes(channel)) {
@@ -362,6 +399,11 @@
 
   function handleServerERR(payload, command = "", request = "") {
     addLog(`S: ERR ${payload}`, "error");
+    if (request === "GROUP STATUS") return;
+    if (command === "GROUP" && /^404 GROUP_NOT_FOUND\b/.test(payload)) {
+      const [, action, leader] = request.trim().split(/\s+/);
+      if (action === "JOIN") groupInvitations = groupInvitations.filter(name => name !== leader);
+    }
     const backend = getBackend();
     if (/^400 (INVALID_ARGUMENTS|UNKNOWN_COMMAND)\b/.test(payload)) {
       if (command === 'INFO' && request.startsWith('INFO ')) {
@@ -399,6 +441,11 @@
       if (Number.isSafeInteger(count)) serverPlayersCount = count;
     } else if (scope === "group" && ["INVITE", "JOIN", "LEAVE", "LEADER"].includes(evtType) && parts.length === 3 && rest) {
       addMessage("group", "GROUP", `${evtType}: ${rest}`, "system", false);
+      if (evtType === "INVITE") {
+        if (!groupId && !groupInvitations.includes(rest)) groupInvitations = [...groupInvitations, rest];
+      } else {
+        refreshGroup();
+      }
     } else if (CHAT_CHANNELS.includes(scope) && evtType === "CHAT" && parts[2] && parts.slice(3).join(" ").trim()) {
       const sender = parts[2];
       const text = parts.slice(3).join(" ");
@@ -444,6 +491,7 @@
       await backend[method](...args);
       return true;
     } catch (err) {
+      if (request === "GROUP STATUS") { addLog(String(err), "error"); return false; }
       showActionError(String(err), command, request, "CLIENT");
       addLog(String(err), "error");
       return false;
@@ -500,13 +548,26 @@
   const callFlee = () => invoke("SendCommand", "FLEE");
   function callGroup(action, target = "") {
     target = target.trim().toLowerCase();
-    if (["INVITE", "JOIN"].includes(action) && !target) {
-      const error = "Enter the player's username (the leader for JOIN).";
+    if (["INVITE", "JOIN"].includes(action) && ([...target].length < 3 || [...target].length > 20 || !/^[\p{Ll}][\p{Ll}\p{Nd}_]*$/u.test(target))) {
+      const error = "Enter a username: 3–20 letters, digits or underscores, starting with a letter.";
       showActionError(error, "GROUP", "", "CLIENT");
       addLog(error, "error");
       return false;
     }
-    return invoke("Group", action, target);
+    if (groupPending) return false;
+    groupPending = true;
+    groupStatus = "";
+    return invoke("Group", action, target).then(sent => {
+      if (!sent) groupPending = false;
+      return sent;
+    });
+  }
+  function refreshGroup() {
+    return invokeBackend("SendCommand", ["GROUP STATUS"], false);
+  }
+  function openGroup() {
+    showGroupModal = true;
+    refreshGroup();
   }
   async function handleSendMessage() {
     const text = chatInput.trim();
@@ -521,9 +582,10 @@
     tick().then(() => globalThis.document?.getElementById('nearby-' + id)?.focus());
   }
   function handleGameShortcut(event) {
+    if (event.key === "Escape" && showGroupModal) { showGroupModal = false; return; }
     if (!connected || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || activeDialogue || activeItemInfo || showGroupModal || mapExpanded) return;
     if (event.target?.closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return;
-    const action = {'1': callLook, '2': callStatus, '3': callQuests, '4': callWho, '5': () => showGroupModal = true}[event.key];
+    const action = {'1': callLook, '2': callStatus, '3': callQuests, '4': callWho, '5': openGroup}[event.key];
     if (action) { event.preventDefault(); action(); }
   }
 </script>
@@ -702,7 +764,7 @@
             <button class="btn-quick" on:click={callStatus} title="Refresh your health and combat state (2)" aria-keyshortcuts="2"><span>Status</span><kbd>2</kbd></button>
             <button class="btn-quick" on:click={callQuests} title="Refresh your quest journal (3)" aria-keyshortcuts="3"><span>Quests</span><kbd>3</kbd></button>
             <button class="btn-quick" on:click={callWho} title="Refresh the players in your room and online (4)" aria-keyshortcuts="4"><span>Players</span><kbd>4</kbd></button>
-            <button class="btn-quick party-action" on:click={() => showGroupModal = true} title="Create, join or manage your party (5)" aria-keyshortcuts="5"><span>Party</span><kbd>5</kbd></button>
+            <button class="btn-quick group-action" on:click={openGroup} title="Create, join or manage your group (5)" aria-keyshortcuts="5"><span>GROUP{groupInvitations.length ? ` (${groupInvitations.length})` : ''}</span><kbd>5</kbd></button>
           </div>
         </div>
       </aside>
@@ -774,22 +836,62 @@
       <div class="modal-backdrop">
         <div class="dialogue-card" role="dialog" aria-modal="true" aria-label="Group Management">
           <div class="dialogue-header">
-            <h3>Party</h3>
-            <button class="btn-close" aria-label="Close party dialog" on:click={() => showGroupModal = false}><Icon name="close" size={16}/></button>
+            <h3>GROUP</h3>
+            <button class="btn-close" aria-label="Close group dialog" on:click={() => showGroupModal = false}><Icon name="close" size={16}/></button>
           </div>
-          <p class="subtitle" style="margin-bottom: 1rem;">Create a party, invite a player, or enter a leader’s username to join. Player names are case-insensitive.</p>
           {#if groupError}<div class="error-badge" role="alert">{groupError}</div>{/if}
           {#if groupStatus}<p class="group-status" role="status">{groupStatus}</p>{/if}
-          <div class="form-group" style="margin-bottom: 1rem;">
-            <label for="groupTarget">Adventurer name</label>
-            <input id="groupTarget" type="text" bind:value={groupTarget} placeholder="e.g. Garfield" />
-          </div>
-          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button class="btn-action btn-talk" on:click={() => callGroup("CREATE")}>Create party</button>
-            <button class="btn-action btn-talk" disabled={!groupTarget.trim()} on:click={() => callGroup("INVITE", groupTarget)}>Invite</button>
-            <button class="btn-action btn-take" disabled={!groupTarget.trim()} on:click={() => callGroup("JOIN", groupTarget)}>Join party</button>
-            <button class="btn-action btn-drop" on:click={() => callGroup("LEAVE", "")}>Leave party</button>
-          </div>
+          {#if groupPending}<p role="status">Waiting for the server…</p>{/if}
+          {#if groupId}
+            <section class="group-section">
+              <h4>Your group</h4>
+              <p class="subtitle">Leader: {groupLeader || 'Loading…'}</p>
+              <ul class="group-members">
+                {#each groupMembers as member}
+                  <li>{member}{member === username ? ' (you)' : ''}{member === groupLeader ? ' · Leader' : ''}</li>
+                {/each}
+              </ul>
+            </section>
+            <form class="group-section" on:submit|preventDefault={() => callGroup("INVITE", groupTarget)}>
+              <h4>Invite a player</h4>
+              <p class="subtitle">They will receive an invitation and choose whether to join.</p>
+              <div class="form-group">
+                <label for="groupTarget">Player’s username</label>
+                <input id="groupTarget" type="text" bind:value={groupTarget} placeholder="e.g. garfield" />
+              </div>
+              <button class="btn-action btn-talk" disabled={groupPending || !groupTarget.trim()} type="submit">Send invitation</button>
+            </form>
+            <button class="btn-action btn-drop" disabled={groupPending} on:click={() => callGroup("LEAVE")}>Leave group</button>
+          {:else}
+            {#if groupInvitations.length}
+              <section class="group-section">
+                <h4>Invitations received</h4>
+                {#each groupInvitations as leader}
+                  <div class="group-invitation">
+                    <p>{leader} invited you to their group.</p>
+                    <div class="group-actions">
+                      <button class="btn-action btn-talk" disabled={groupPending} on:click={() => callGroup("JOIN", leader)}>Accept invitation</button>
+                      <button class="btn-action" disabled={groupPending} on:click={() => groupInvitations = groupInvitations.filter(name => name !== leader)}>Dismiss</button>
+                    </div>
+                  </div>
+                {/each}
+              </section>
+            {/if}
+            <section class="group-section">
+              <h4>Start a group</h4>
+              <p class="subtitle">You are not in a group. Create one, then invite your friends.</p>
+              <button class="btn-action btn-talk" disabled={groupPending} on:click={() => callGroup("CREATE")}>Create group</button>
+            </section>
+            <form class="group-section" on:submit|preventDefault={() => callGroup("JOIN", groupLeaderTarget)}>
+              <h4>Join an existing group</h4>
+              <p class="subtitle">Know the leader’s username? You can join directly. Names are case-insensitive.</p>
+              <div class="form-group">
+                <label for="groupLeaderTarget">Group leader’s username</label>
+                <input id="groupLeaderTarget" type="text" bind:value={groupLeaderTarget} placeholder="e.g. alice" />
+              </div>
+              <button class="btn-action btn-take" disabled={groupPending || !groupLeaderTarget.trim()} type="submit">Join group</button>
+            </form>
+          {/if}
         </div>
       </div>
     {/if}

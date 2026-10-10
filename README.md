@@ -343,6 +343,13 @@ are informational: the RFC does not require invitation-only membership.
 GROUP INVITE/JOIN player names are converted to lowercase before lookup;
 aris, ARIS and ArIs therefore target the same player in the CLI and GUI.
 
+The GUI's **GROUP (5)** dialog shows separate flows for creating a group,
+inviting players and joining. Received invitations display an **Accept invitation**
+button; joining by leader username remains available. Group members and the
+current leader are refreshed through the authenticated `GROUP STATUS` extension,
+which returns `OK {"id":"group.1","leader":"alice","members":["alice","bob"]}`
+with sorted members, or `OK {"id":"","leader":"","members":[]}` when ungrouped.
+
 ## Server Logging
 
 Structured JSON logs include timestamp, level, connections, commands/parameters,

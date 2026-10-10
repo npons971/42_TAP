@@ -227,6 +227,13 @@ strong { font-weight: normal; }
 .item-info-stats div { display: flex; justify-content: space-between; gap: 12px; }
 .item-info-stats dd { margin: 0; color: var(--blue); }
 .group-status { margin-bottom: 12px; color: var(--green); }
+.group-section { margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--ink); }
+.group-section h4 { margin-bottom: 8px; }
+.group-section .subtitle { margin-bottom: 12px; line-height: 1.6; }
+.group-section .form-group { margin-bottom: 12px; }
+.group-members { padding-left: 20px; line-height: 1.8; overflow-wrap: anywhere; }
+.group-invitation { margin-top: 12px; overflow-wrap: anywhere; }
+.group-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
 @media (max-width: 960px) {
   .app-container { height: auto; min-height: 100vh; padding: 12px; }

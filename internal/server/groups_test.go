@@ -104,3 +104,51 @@ func TestConcurrentGroupCreationAndFullQueue(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestGroupStatusTracksMembershipAndLeader(t *testing.T) {
+	s, a := combatClient(t)
+	a.username = "zoe"
+	b := &client{username: "bob", outbox: make(chan string, 16)}
+	s.players[a.username] = a
+	s.players[b.username] = b
+	status := func(c *client, want string) {
+		t.Helper()
+		if !s.group(c, []string{"GROUP", "STATUS"}) {
+			t.Fatal("GROUP STATUS could not queue reply")
+		}
+		if got := <-c.outbox; got != "OK "+want {
+			t.Fatalf("GROUP STATUS = %s, want OK %s", got, want)
+		}
+	}
+	status(a, `{"id":"","leader":"","members":[]}`)
+	s.group(a, []string{"GROUP", "CREATE"})
+	drain(a)
+	status(a, `{"id":"group.1","leader":"zoe","members":["zoe"]}`)
+	s.group(b, []string{"GROUP", "JOIN", "zoe"})
+	drain(a)
+	drain(b)
+	status(b, `{"id":"group.1","leader":"zoe","members":["bob","zoe"]}`)
+	s.group(a, []string{"GROUP", "LEAVE"})
+	drain(a)
+	drain(b)
+	status(a, `{"id":"","leader":"","members":[]}`)
+	status(b, `{"id":"group.1","leader":"bob","members":["bob"]}`)
+	s.mu.Lock()
+	s.leaveGroupLocked(b)
+	s.mu.Unlock()
+	status(b, `{"id":"","leader":"","members":[]}`)
+}
+
+func TestGroupStatusAuthenticationAndArguments(t *testing.T) {
+	s, c := combatClient(t)
+	c.username = ""
+	s.group(c, []string{"GROUP", "STATUS"})
+	if got := <-c.outbox; !strings.Contains(got, "NOT_AUTHENTICATED") {
+		t.Fatal(got)
+	}
+	c.username = "alice"
+	s.group(c, []string{"GROUP", "STATUS", "alice"})
+	if got := <-c.outbox; !strings.Contains(got, "INVALID_ARGUMENTS") {
+		t.Fatal(got)
+	}
+}

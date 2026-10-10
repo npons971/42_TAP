@@ -168,9 +168,13 @@ assert.equal(run('serverPlayersCount'), 2);
 assert.match(run('messages.group.at(-1).text'), /INVITE.*alice/);
 resetCalls();
 await run(`callGroup('CREATE', '')`);
+run(`handleServerOK('group=group.1', 'GROUP', 'GROUP CREATE')`);
 await run(`callGroup('JOIN', ' AlIcE ')`);
+run(`handleServerOK('group=group.2', 'GROUP', 'GROUP JOIN alice')`);
 await run(`callGroup('INVITE', ' BOB ')`);
+run(`handleServerOK('', 'GROUP', 'GROUP INVITE bob')`);
 await run(`callGroup('JOIN', ' ÉLISE ')`);
+run(`handleServerOK('group=group.3', 'GROUP', 'GROUP JOIN élise')`);
 assert.deepEqual(sent.filter(({method}) => method === 'Group').map(({args}) => args), [['CREATE', ''], ['JOIN', 'alice'], ['INVITE', 'bob'], ['JOIN', 'élise']]);
 assert.match(source, /callGroup\(["']CREATE["']/);
 assert.match(source, /callGroup\(["']JOIN["']/);
@@ -332,7 +336,7 @@ const expectChannel = (expected, label) => {
 // Exercise real event subscriptions for every standard event and project extension.
 const eventCases = [
   ...['GLOBAL', 'ROOM', 'GROUP'].map(scope => [`${scope} CHAT élise Hello  everyone!`, scope.toLowerCase(), []]),
-  ...['INVITE', 'JOIN', 'LEAVE', 'LEADER'].map(action => [`GROUP ${action} alice`, 'group', []]),
+  ...['INVITE', 'JOIN', 'LEAVE', 'LEADER'].map(action => [`GROUP ${action} alice`, 'group', action === 'INVITE' ? [] : ['SendCommand']]),
   ...['ENTER', 'LEAVE'].map(action => [`ROOM PRESENCE ${action} alice`, 'room', ['Look', 'Who']]),
   ['ROOM COMBAT {"outcome":"victory","target":"npc.bandit_leader"}', 'room', ['Status', 'Look', 'Quests']],
   ...['TAKE', 'DROP', 'USE', 'DELIVER', 'REWARD'].map(action => [`ROOM ITEM ${action} alice item.apple`, 'room', ['Look', 'Inventory', 'Status', 'Quests']]),
@@ -457,5 +461,52 @@ eventHandlers.get('disconnected')('Connection closed by server');
 assert.equal(run('connected'), false);
 assert.equal(run('connectionError'), 'Connection closed by server');
 expectChannel(null, 'disconnect');
+
+// Group invitations and membership use confirmed replies, never command dispatch alone.
+run(`resetSession(); connected = true; username = 'bob'; handleServerEVT('GROUP INVITE alice'); handleServerEVT('GROUP INVITE alice')`);
+assert.equal(run('groupInvitations.length'), 1, 'duplicate invitations are coalesced');
+assert.equal(run('showGroupModal'), false, 'invitations do not interrupt play');
+resetCalls();
+await run(`callGroup('JOIN', groupInvitations[0])`);
+assert.equal(run('groupId'), '', 'sending a join does not confirm membership');
+assert.equal(run('groupPending'), true);
+await run(`callGroup('CREATE')`);
+assert.equal(sent.filter(({method}) => method === 'Group').length, 1, 'pending actions block double submission');
+eventHandlers.get('server_reply')({kind:'OK', command:'GROUP', request:'GROUP JOIN alice', payload:'group=group.1'});
+assert.equal(run('groupId'), 'group.1');
+assert.equal(run('groupInvitations.length'), 0);
+assert.equal(run('groupPending'), false);
+assert.match(run('groupStatus'), /joined alice/);
+assert.ok(sent.some(({method, args}) => method === 'SendCommand' && args[0] === 'GROUP STATUS'));
+run(`handleServerOK('{"id":"group.1","leader":"alice","members":["alice","bob"]}', 'GROUP', 'GROUP STATUS')`);
+assert.equal(run('groupMembers.join(",")'), 'alice,bob');
+assert.match(run('groupStatus'), /joined alice/, 'status refresh preserves action feedback');
+resetCalls();
+run(`handleServerEVT('GROUP LEADER bob')`);
+assert.ok(sent.some(({args}) => args[0] === 'GROUP STATUS'), 'leader changes fetch the authoritative roster');
+run(`handleServerOK('{"id":"group.1","leader":"bob","members":["bob"]}', 'GROUP', 'GROUP STATUS')`);
+assert.equal(run('groupLeader'), 'bob');
+await run(`callGroup('INVITE', 'alice')`);
+run(`handleServerERR('404 PLAYER_NOT_FOUND Offline', 'GROUP', 'GROUP INVITE alice')`);
+assert.equal(run('groupPending'), false, 'errors allow retry');
+assert.equal(run('groupId'), 'group.1', 'failed invitations preserve membership');
+run(`handleServerOK('', 'GROUP', 'GROUP LEAVE')`);
+assert.equal(run('groupId'), '');
+assert.equal(run('groupMembers.length'), 0);
+run(`handleServerEVT('GROUP INVITE alice'); resetSession()`);
+assert.equal(run('groupInvitations.length'), 0, 'disconnect clears session invitations');
+run(`connected = true; handleServerEVT('GROUP INVITE alice')`);
+await run(`callGroup('JOIN', 'alice')`);
+run(`handleServerERR('404 GROUP_NOT_FOUND Missing leader', 'GROUP', 'GROUP JOIN alice')`);
+assert.equal(run('groupInvitations.length'), 0, 'unavailable groups remove stale invitations');
+resetCalls();
+await run(`callGroup('INVITE', '𐐨'.repeat(20))`);
+assert.equal(sent.find(({method}) => method === 'Group').args[1], '𐐨'.repeat(20), 'group usernames use Unicode character limits');
+run(`handleServerOK('', 'GROUP', 'GROUP INVITE ${'𐐨'.repeat(20)}')`);
+resetCalls();
+await run(`callGroup('INVITE', 'alice bob')`);
+assert.equal(sent.filter(({method}) => method === 'Group').length, 0, 'invalid usernames stay out of protocol commands');
+assert.match(source, /<span>GROUP/);
+assert.doesNotMatch(source, /Create party|Join party|Leave party|<h3>Party/);
 
 console.log('GUI protocol: replies, all standard/extension events, error routing, refreshes, fallback, combat, groups, quests, Unicode validation, connection setup, network errors, logs, hotkeys, map selection and session reset passed.');

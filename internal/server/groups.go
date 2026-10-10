@@ -13,10 +13,24 @@ func (s *Server) group(c *client, args []string) bool {
 		return notAuthenticated(c, "GROUP")
 	}
 	if len(args) < 2 {
-		return sendError(c, "invalid_arguments", "Usage: GROUP CREATE, GROUP INVITE <username>, GROUP JOIN <leader-name> or GROUP LEAVE")
+		return sendError(c, "invalid_arguments", "Usage: GROUP CREATE, GROUP INVITE <username>, GROUP JOIN <leader-name>, GROUP LEAVE or GROUP STATUS")
 	}
 	action := strings.ToUpper(args[1])
 	switch action {
+	case "STATUS":
+		if len(args) != 2 {
+			return sendError(c, "invalid_arguments", "GROUP STATUS takes no arguments")
+		}
+		members := make([]string, 0, len(s.groups[c.group]))
+		for member := range s.groups[c.group] {
+			members = append(members, member.username)
+		}
+		sort.Strings(members)
+		return queueJSON(c, "GROUP STATUS", struct {
+			ID      string   `json:"id"`
+			Leader  string   `json:"leader"`
+			Members []string `json:"members"`
+		}{c.group, s.groupLeaders[c.group], members})
 	case "CREATE":
 		if len(args) != 2 {
 			return sendError(c, "invalid_arguments", "GROUP CREATE takes no arguments")
@@ -91,7 +105,7 @@ func (s *Server) group(c *client, args []string) bool {
 		s.removeGroupMemberLocked(c)
 		return true
 	default:
-		return sendError(c, "invalid_arguments", "GROUP action must be CREATE, INVITE, JOIN or LEAVE")
+		return sendError(c, "invalid_arguments", "GROUP action must be CREATE, INVITE, JOIN, LEAVE or STATUS")
 	}
 }
 func (s *Server) broadcastGroupLocked(id, event string) {

@@ -32,7 +32,29 @@ fs.writeFileSync(path.join(sdk, '.zig-libc'), [
   'msvc_lib_dir=', 'kernel32_lib_dir=', 'gcc_dir=', '',
 ].join('\n'));
 // libc.so and libm.so may be GNU linker scripts with absolute system paths.
+const sdkCanonical = fs.realpathSync(sdk);
+const escapeRegexp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const libraryReference = new RegExp(
+  `(?<![\\w/.-])(?:${[destination, sdk].map(escapeRegexp).join('|')})?` +
+  '(/(?:usr/)?lib(?:64|/x86_64-linux-gnu)?/(?:[\\w.+-]+/)*[\\w.+-]+)', 'g');
+function localLibrary(reference, filename) {
+  const relative = reference.slice(1);
+  const counterpart = relative.startsWith('usr/') ? relative.slice(4) : `usr/${relative}`;
+  // Prefer the archive's original layout, then merged-usr, then another SDK
+  // library directory (e.g. Debian's lib64 loader in the multiarch directory).
+  const candidates = new Set([relative, counterpart,
+    ...directories.map(dir => path.join(dir, path.basename(relative)))]);
+  for (const candidate of candidates) {
+    const extracted = path.join(sdk, candidate);
+    if (!fs.existsSync(extracted)) continue;
+    const canonical = fs.realpathSync(extracted);
+    if (!canonical.startsWith(`${sdkCanonical}${path.sep}`) || !fs.statSync(canonical).isFile()) continue;
+    return path.join(destination, candidate);
+  }
+  throw new Error(`Bibliothèque locale introuvable : ${reference} (script ${filename}, SDK ${sdk}).`);
+}
 const visited = new Set();
+const scripts = [];
 for (const dir of directories) {
   const directory = path.join(sdk, dir);
   if (!fs.existsSync(directory)) continue;
@@ -45,7 +67,9 @@ for (const dir of directories) {
     const source = fs.readFileSync(filename);
     if (!source.subarray(0, 128).toString().includes('GNU ld script')) continue;
     const text = source.toString();
-    fs.writeFileSync(filename, text.replace(/\/(?:usr\/)?lib(?:64|\/x86_64-linux-gnu)?\/[\w.+-]+/g,
-      (value, offset) => text.slice(0, offset).endsWith(destination) ? value : path.join(destination, value)));
+    scripts.push([filename, text.replace(libraryReference,
+      (_value, reference) => localLibrary(reference, filename))]);
   }
 }
+// Validate every reference before modifying any linker script.
+for (const [filename, text] of scripts) fs.writeFileSync(filename, text);
