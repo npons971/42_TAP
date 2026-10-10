@@ -21,5 +21,10 @@ fs.mkdirSync(path.join(repo, '.build'), { recursive: true });
 const binary = path.join(repo, '.build/check-webkit-images');
 execFileSync(path.join(repo, 'cc'), ['-Wall', '-Wextra', '-Werror',
   path.join(repo, 'scripts/check-webkit-images.c'), '-o', binary, ...flags], { env, stdio: 'inherit' });
-execFileSync(binary, [path.join(sdk, 'usr/share/icons/Adwaita/scalable/status/image-missing.svg')],
+// Older Adwaita releases only ship symbolic icons in the scalable directory.
+const icon = ['status/image-missing.svg', 'places/folder-symbolic.svg']
+  .map(name => path.join(sdk, 'usr/share/icons/Adwaita/scalable', name))
+  .find(file => fs.existsSync(file));
+if (!icon) throw new Error('Icône SVG Adwaita manquante dans le SDK local.');
+execFileSync(binary, [icon],
   { env, stdio: 'inherit', timeout: 20000 });

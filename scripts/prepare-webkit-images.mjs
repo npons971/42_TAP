@@ -13,8 +13,9 @@ delete env.LD_PRELOAD;
 const mime = path.join(sdk, 'usr/share/mime');
 execFileSync(path.join(sdk, 'usr/bin/update-mime-database'), [mime], { env, stdio: 'inherit' });
 
-// Fedora installs the query tool in bin with a -64 suffix; Debian installs it
-// beside the modules. Discover the module directory independently of the tool.
+// Fedora installs the query tool in bin with a -64 suffix; Debian/Ubuntu may
+// put it in the pixbuf root or the version directory beside the modules.
+// Discover the module directory independently of the tool.
 const queries = [path.join(sdk, 'usr/bin/gdk-pixbuf-query-loaders-64'),
   path.join(sdk, 'usr/bin/gdk-pixbuf-query-loaders')];
 for (const library of libraries) {
@@ -24,7 +25,8 @@ for (const library of libraries) {
     const directory = path.join(pixbuf, version);
     const loaders = path.join(directory, 'loaders');
     if (!fs.existsSync(loaders)) continue;
-    const query = [path.join(directory, 'gdk-pixbuf-query-loaders'), ...queries]
+    const query = [path.join(directory, 'gdk-pixbuf-query-loaders'),
+      path.join(pixbuf, 'gdk-pixbuf-query-loaders'), ...queries]
       .find(file => fs.existsSync(file));
     if (!query) throw new Error('Outil local gdk-pixbuf-query-loaders manquant.');
     const modules = fs.readdirSync(loaders).filter(name => name.endsWith('.so'))
