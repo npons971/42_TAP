@@ -723,11 +723,12 @@
           </div>
           <div class="quests-list">
             {#each quests as q (q.id)}
-              <div class="quest-card-item">
-                <div class="quest-title-row">
+              <details class="quest-card-item">
+                <summary class="quest-title-row">
                   <span class="quest-title">{q.title}</span>
-                  <span class="quest-status-badge {q.state}">{questStatusLabel(q)}</span>
-                </div>
+                  <span class="quest-toggle" aria-hidden="true"><Icon name="arrow" size={16}/></span>
+                </summary>
+                <span class="quest-status-badge {q.state}">{questStatusLabel(q)}</span>
                 {#if q.description}<p class="quest-desc">{q.description}</p>{/if}
                 {#if q.steps.length}
                   <ol class="quest-steps" aria-label="Quest objectives">
@@ -747,7 +748,7 @@
                 {#if canTalkToQuestGiver(q)}
                   <button class="btn-action btn-quest" disabled={combatState === 'EN_COMBAT'} on:click={() => invoke(q.state === 'available' ? 'Quest' : 'Talk', q.giver)}>{q.state === 'available' ? 'Accept quest' : 'Claim reward'}</button>
                 {/if}
-              </div>
+              </details>
             {/each}
             {#if quests.length === 0}
               <div class="empty-list">Talk to a quest giver.</div>

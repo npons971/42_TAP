@@ -174,8 +174,14 @@ strong { font-weight: normal; }
 .inventory-item .npc-buttons { margin: 0; }
 .item-name { flex: 1 1 85px; overflow-wrap: anywhere; }
 .quest-card-item { padding: 8px 0; font-size: 14px; border-bottom: 1px solid var(--ink); }
-.quest-title-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.quest-title { overflow-wrap: anywhere; color: var(--blue); }
+.quest-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; list-style: none; }
+.quest-title-row::-webkit-details-marker { display: none; }
+.quest-title-row:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+.quest-title { min-width: 0; overflow-wrap: anywhere; color: var(--blue); }
+.quest-toggle { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; border: 2px solid var(--ink); }
+.quest-title-row:hover .quest-toggle { color: var(--paper); background: var(--blue); }
+.quest-card-item[open] > .quest-title-row { margin-bottom: 8px; }
+.quest-card-item[open] > .quest-title-row .quest-toggle svg { transform: rotate(90deg); }
 .quest-status-badge { font-size: 12px; color: var(--ink); padding: 2px 4px; background: var(--paper); border: 1px solid var(--ink); }
 .quest-desc, .quest-meta { font-size: 12px; overflow-wrap: anywhere; }
 .quest-desc:empty { display: none; }
@@ -197,7 +203,7 @@ strong { font-weight: normal; }
 .btn-quick kbd { margin-left: auto; padding-right: 4px; font: inherit; font-size: 12px; }
 
 /* Conversation box. */
-.chat-panel { height: 152px; flex-shrink: 0; overflow: hidden; }
+.chat-panel { height: 220px; flex-shrink: 0; overflow: hidden; }
 .tabs-header { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 10px; border-bottom: 2px solid var(--ink); }
 .tab-btn { padding: 2px 4px; font-size: 14px; border: 0; }
 .tab-btn.active { background: var(--blue); color: var(--paper); }
@@ -244,7 +250,7 @@ strong { font-weight: normal; }
   .inventory-list, .quests-list { max-height: 200px; overflow-y: auto; }
   .actions-section { margin-top: 8px; }
   .action-buttons-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
-  .chat-panel { height: 200px; }
+  .chat-panel { height: 240px; }
 }
 @media (max-width: 600px) {
   .top-bar { flex-wrap: wrap; gap: 8px; }
