@@ -4,433 +4,246 @@
 
 ## Description
 
-TAP is a multiplayer text adventure in a shared world. Players explore rooms, chat, exchange unique items, interact with NPCs, fight enemies and complete quests. A Go TCP server owns the game state; a Go CLI and a Wails desktop GUI connect through RFC 42TAP. The GUI uses Svelte for its web interface. State resets when the server restarts; disk persistence is not required.
+TAP is a multiplayer text adventure in a shared world. Players explore a village and its surroundings, chat, collect unique items, talk to NPCs, fight enemies and complete quests. The project includes a Go TCP server, a Go terminal client and a Wails desktop client with a Svelte interface. Both clients use RFC 42TAP to communicate with the same server.
+
+The server owns the game state. Items and quest rewards are shared between players, and the world resets when the server restarts.
 
 ## Instructions
 
-Run commands from the repository root. The current installer targets Linux x86_64. A graphical session is needed to launch the desktop client. Installation downloads dependencies and therefore requires network access on the first run.
+Run commands from the repository root. The installer targets Linux x86_64 and downloads dependencies on the first run. The desktop client needs a graphical session.
 
 ```sh
 make install
 make build
+make run-all
 ```
 
-All SDKs, runtimes, native libraries and caches are installed inside the repository. No administrator access or global package installation is required. Use the local `./go`, `./node`, `./npm` and `./wails` wrappers. The Makefile exports the local PATH, GOPATH, Go cache and npm cache. See [AGENTS.md](AGENTS.md) for environment rules and the [GUI guide](Project/client-gui/README.md) for GTK/WebKit setup.
+`make run-all` starts the server and opens the CLI and GUI in separate terminals. Enter `CONNECT alice` in the CLI; choose `bob` and click **CONNECT & PLAY** in the GUI. Both players start on Village Square. Press Ctrl+C in the original terminal to stop the server started by the launcher. An existing TAP server is reused and remains running.
 
-Run `make check-gui` to diagnose the local tools and native dependencies.
+This launcher needs a supported terminal emulator: GNOME Terminal, Konsole, Xfce Terminal, MATE Terminal, Kitty, Alacritty or xterm. You can also launch each component separately as shown below.
+
+All SDKs, native libraries and caches stay inside the repository; no administrator access is needed. Use the local `./go`, `./node`, `./npm` and `./wails` tools. The Makefile configures their environment. See [AGENTS.md](AGENTS.md) for the local tooling rules.
 
 ## Building and Running
 
 | Command | Purpose |
 |---|---|
-| `make install` | Install repository-local dependencies |
+| `make install` | Install local Go, Node, Wails and GTK/WebKit dependencies |
 | `make build` | Compile the server, CLI and GUI |
-| `make build-server` | Write `.build/tap-server` |
-| `make build-cli` | Write `.build/tap-cli` |
-| `make build-gui` | Write `Project/client-gui/build/bin/tap-gui` |
-| `make run-server` | Start the TCP server |
-| `make run-client` | Start the terminal client |
-| `make run-client-gui` | Build and launch the graphical client |
-| `make run-all` | Start the server and open both clients in separate terminals |
+| `make build-server` | Build `.build/tap-server` |
+| `make build-cli` | Build `.build/tap-cli` |
+| `make build-gui` | Build `Project/client-gui/build/bin/tap-gui` |
+| `make run-server` | Start the TCP server on port 4242 |
+| `make run-client` | Connect the CLI to `127.0.0.1:4242` |
+| `make run-client-gui` | Build and open the GUI, starting a local server if needed |
+| `make run-all` | Start the server and open both clients |
 | `make dev-gui` | Launch the GUI with frontend live reload |
+| `make check-gui` | Check local tools and GTK/WebKit dependencies |
 | `make test` | Run automated tests and build the frontend |
 | `make lint` | Check Go, JavaScript and Svelte |
-| `make clean` | Remove downloaded tools, archives and local tool caches |
+| `make clean` | Remove downloaded tools, archives and tool caches |
 
-The `gui` target remains a shorthand for `run-client-gui`. `clean` does not remove `.build`, frontend dependencies or generated GUI build artifacts. Use `V=1` for detailed command output.
-
-### Multiplayer launch
-
-For a multiplayer demonstration, run `make run-all` in a graphical session.
-It starts the server in the current terminal, waits for the TAP greeting, then
-opens two separate terminals running `make run-client` and `make run-client-gui`. The GUI uses
-this server without starting another one. Press Ctrl+C in the original terminal
-to stop the server started by this command. An existing TAP server is reused and
-remains running; if another service occupies the port, the command exits with an
-explanation. A supported terminal emulator must be installed (GNOME
-Terminal, Konsole, Xfce Terminal, MATE Terminal, Kitty, Alacritty or xterm).
-Use `make build` to compile all three components without launching them.
-
-```sh
-make run-client-gui
-```
-
-The command prepares repository-local tools, builds and opens the desktop client,
-and starts a local TAP server when needed. Choose a username and click
-**CONNECT & PLAY**. Closing the GUI stops the server started by the launcher;
-an existing server remains running. Use `make dev-gui` for live development,
-`make build-gui` to compile, and `make check-gui` to diagnose local dependencies.
-For a remote server: `make run-client-gui GUI_HOST=192.168.1.10 GUI_PORT=4242 GUI_SERVER=off`.
-See the [GUI guide](Project/client-gui/README.md) for platform requirements,
-installation and gameplay controls. Run `make` for command help.
-
-### Server and protocol session
-
-The Go TCP server accepts multiple simultaneous connections, sends
-`OK hello proto=1` to each client, and supports `CONNECT`, `LOOK`,
-`MOVE`, `CHAT` (`GLOBAL`, `ROOM` and `GROUP`), `WHO`, `STATUS`, `TAKE`, `DROP`,
-`INVENTORY`, `TALK`, `ATTACK`, `QUEST`, `QUESTS`, `GROUP`, `USE`,
-`DEFEND`, `FLEE`, and `QUIT`. It loads Dev B’s complete nine-room world from
-[`data/world.json`](data/world.json): ten unique objects, eight NPCs and two
-quest definitions. The standard command signatures, replies and events follow
-[the external RFC](docs/Commun/protocol/external_rfc.html), with documented
-USE, DEFEND, FLEE and metadata extensions. GROUP supports CREATE, INVITE,
-JOIN by leader username, LEAVE and chat across rooms. See the
-[conformance report](docs/Commun/protocol/rfc_conformance.md).
-The implemented wire contract is in [the protocol documentation](docs/Commun/protocol/rfc_syntax.md).
-Errors use `ERR <code> <specific message>`. For example, `CONNECT ARIS` explains
-the lowercase username rule, `MOVE down` lists the current room's available
-exits, and `WHO extra` says that `WHO` takes no arguments. Unknown verbs return `ERR 400 UNKNOWN_COMMAND`.
-
-The server and CLI require Go 1.22 or newer; the GUI module requires Go 1.25 or newer. Makefile targets provision the local Go
-SDK if needed and use repository-local dependency and build caches. Run the
-server on the default port 4242:
+To launch the components yourself, run each command in a separate terminal:
 
 ```sh
 make run-server
+make run-client
+make run-client-gui GUI_SERVER=off
 ```
 
-Once listening, the server prints ready-to-copy `make run-client` and
-`make run-client-gui` commands with its network addresses and actual port. Use the
-address on the same network as the other PC. If several interfaces are active,
-several command pairs are displayed. A loopback-only listener prints local
-commands instead.
-
-To use another listen address:
+The server prints client launch commands with its network addresses. For another computer on the same network, use the server's address:
 
 ```sh
-make run-server SERVER_ADDR=127.0.0.1:4243
+make run-client CLI_ADDR=192.168.1.10:4242
+make run-client-gui GUI_HOST=192.168.1.10 GUI_PORT=4242 GUI_SERVER=off
 ```
 
-Usernames must be 3–20 Unicode codepoints, start with a lowercase letter, and
-contain only lowercase Unicode letters, decimal digits, or underscores. For example,
-`CONNECT aris` is valid; `CONNECT ARIS` is rejected. After a failed `CONNECT`,
-you can retry on the same connection. `QUIT` closes that connection.
+Change the listener with `make run-server SERVER_ADDR=127.0.0.1:4243`, or load another world with `make run-server WORLD_FILE=path/to/world.json`. Set the clients' address and port accordingly.
 
-Use `nc 127.0.0.1 4242` from another terminal to connect. Each client first
-receives the greeting. Then try:
+The server and CLI modules require Go 1.22 or newer; the GUI module requires Go 1.25 or newer. Makefile targets provision the local SDK as needed. Use `V=1` for detailed output; failed build and check commands report their logs in `.build/logs/`. `make clean` keeps `.build`, frontend dependencies and generated GUI artifacts. Run `make` for command help and see the [GUI guide](Project/client-gui/README.md) for desktop setup and controls.
+
+### CLI usage
+
+The CLI sends typed RFC commands directly to the server. Replies and events arrive while you type; on Linux, incoming events preserve the current input line. Other platforms and pipes use plain line mode. `QUIT`, EOF or Ctrl+C closes the client.
 
 ```text
 CONNECT alice
 LOOK
-MOVE north
-LOOK
-WHO
-STATUS
-CHAT GLOBAL Bonjour
+MOVE east
+TAKE Fresh Apple
+INVENTORY
+CHAT GLOBAL Hello everyone
+DROP item.apple
 QUIT
 ```
 
-## CLI Client
-
-```sh
-make run-client
-make run-client CLI_ADDR=127.0.0.1:4243
-make build-cli
-```
-
-The CLI uses direct protocol commands and displays asynchronous replies/events.
-Linux terminals preserve partially typed UTF-8 input when an event arrives;
-backspace and Ctrl-U edit input, Ctrl-C/Ctrl-D quit. Pipes and other platforms
-use plain line mode. QUIT/EOF/cancellation close the client and restore terminal
-settings. Commands, replies and timeouts are bounded.
+Item and NPC targets accept an exact ID or a full display name, without quotes. Display names are case-insensitive, and targets must be in the current room or your inventory as appropriate.
 
 ## Architecture
 
-The server uses a command dispatcher with separate handlers for protocol, items, NPCs, combat, quests and groups. `internal/server/world.go` loads and validates immutable JSON world definitions. Runtime player sessions, item locations, enemy HP, groups and quest progress are owned by `Server`.
+The server uses a command dispatcher with separate handlers for sessions, social commands and gameplay. This keeps TCP handling separate from the rules for items, NPCs, combat and quests. The world loader validates the JSON definitions before accepting players; runtime state is held by `Server`.
 
-Each TCP session has a reader and a writer goroutine. A shared `sync.RWMutex` protects game state. Handlers validate actions and queue the successful response before committing mutations; events follow the actor's response. Bounded outgoing queues and write deadlines prevent a slow or disconnected receiver from blocking other players. Disconnect removes the player before broadcasting departure, releases combat and group membership, and drops carried items. SIGINT/SIGTERM close the listener and active sessions.
+Each TCP session has a reader and a writer goroutine. A shared `sync.RWMutex` protects game state so competing actions cannot duplicate items or rewards. Handlers queue the actor's successful reply before committing an action, then send its events. Bounded outgoing queues and write deadlines keep slow clients from blocking other players.
 
-The CLI receives messages independently of keyboard input. The GUI has a Go TCP backend and a Svelte interface, with asynchronous Wails events and command/reply correlation. The server remains authoritative; the GUI does not ship a separate world catalogue.
+Disconnect removes the player before broadcasting departure, releases combat and group membership, and drops carried items in the current room. SIGINT/SIGTERM close the listener and active sessions.
+
+The CLI receives messages independently of keyboard input. The GUI uses a Go TCP backend and asynchronous Wails events to update Svelte views. It reads world information from the server rather than maintaining a separate world catalogue.
 
 See the [server architecture](docs/Dev_A/architecture/server_architecture.md) and [concurrency model](docs/Dev_A/architecture/concurrency_model.md).
 
 ## Protocol Implementation
 
-WHO returns OK players=<count>. LOOK items/npcs and INVENTORY contain ID arrays.
-TALK returns dialogue text on one line. QUIT sends OK bye before closing.
-STATUS includes hp, max_hp and status (healthy, injured or combat); ATTACK
-includes attacker_hp, target_hp, damage and status, plus documented game details.
-Verbs are case-insensitive. CONNECT ARIS remains invalid under our lowercase
-username policy, while CONNECT élise is accepted.
-This username policy is a project choice, not an RFC requirement. The GUI
-converts uppercase player names to lowercase before validation and sending,
-so entering ARIS in the login form sends CONNECT aris.
+TCP messages use UTF-8 and one LF-terminated line per message. A new connection receives `OK hello proto=1`. Commands return `OK` or `ERR <code> <token> <explanation>`; asynchronous updates use `EVT`. Standard `LOOK` and `INVENTORY` responses contain item IDs, `WHO` returns `OK players=<count>`, and `QUIT` sends `OK bye` before closing.
 
-The GUI uses LOOK DETAILS, INVENTORY DETAILS, QUESTS DETAILS, INFO and TALKJSON to retain display
-names, item flags and ordered dialogue lines without shipping a local world
-catalogue. These are explicit extensions; default commands use RFC formats.
-Responses are correlated with outgoing commands so an empty QUESTS does not
-clear inventory. STATS events update the authenticated player count.
+Our choices and extensions to [RFC 42TAP](docs/Commun/protocol/external_rfc.html) are:
 
-We retain a 4,096-byte line limit including LF instead of the RFC's recommended
-1,024 bytes, to fit room metadata and NPC dialogues. Oversized requests are
-drained and rejected; oversized responses fail without committing an action.
-We follow LF framing, as specified in the RFC transport/general grammar, despite
-a contradictory CRLF production in its CONNECT example. Limits are 128 active
-TCP sessions and 32 inventory slots; fetch rewards can replace an ingredient
-at capacity, while other rewards require a free slot. A refused reward remains
-available for retry after DROP.
+- **Line length:** 4,096 bytes including LF, instead of the recommended 1,024, to fit room metadata and dialogues. Oversized requests are rejected; an action whose reply is too large is not committed.
+- **Line ending:** LF follows the RFC transport and general grammar sections; its CONNECT example contains a conflicting CRLF production.
+- **Usernames:** 3–20 Unicode codepoints, starting with a lowercase letter and containing only lowercase letters, decimal digits or underscores. This is a project policy. The GUI lowercases input before sending CONNECT; GROUP INVITE/JOIN also normalize target names. Command verbs are case-insensitive.
+- **Metadata commands:** `LOOK DETAILS`, `INVENTORY DETAILS`, `WHO DETAILS`, `INFO`, `TALKJSON`, `QUESTINFO`, `QUESTS DETAILS` and `GROUP STATUS` expose names, attributes, ordered dialogue, quest progress or group membership. They support the GUI without changing default command formats.
+- **Extension discovery:** the authenticated `CAPABILITIES` command lists the metadata extensions supported by the server, so the GUI can select compatible requests.
+- **Gameplay commands:** `USE`, `DEFEND` and `FLEE` provide healing and additional combat actions. `TALK` can also accept or complete a quest. `QUESTS` uses the additional status `unavailable` when another player has claimed a started quest's unique reward.
+- **Events and errors:** `EVT ROOM ITEM` actions (`TAKE`, `DROP`, `USE`, `DELIVER`, `REWARD`), `EVT ROOM COMBAT` and `EVT GROUP LEADER` notify clients of game and group changes. Additional error codes cover invalid arguments, combat restrictions, capacity limits and rate limiting; error explanations give command-specific advice.
 
-The [implemented wire contract](docs/Commun/protocol/rfc_syntax.md) and [RFC conformance report](docs/Commun/protocol/rfc_conformance.md) describe standard frames, error codes, event ordering and extensions. The local [RFC 42TAP](docs/Commun/protocol/external_rfc.html) is the protocol reference. Independent cross-team client/server testing remains to be performed.
+The server allows 128 active TCP sessions and 32 inventory slots per player. Recoverable command errors leave the connection open. The [wire contract](docs/Commun/protocol/rfc_syntax.md) and [conformance report](docs/Commun/protocol/rfc_conformance.md) detail frames, codes and extensions. Independent client/server testing with another team remains to be completed.
 
 ## World Design
 
-The active world contains nine interconnected rooms, ten unique objects, eight NPCs with dialogue, quest-giver and enemy roles, and two quests. The main loop is Village Square → Central Market → Tavern → Dark Alley → Village Square. A second loop runs through Tavern Cellar and Damp Sewers. The Overgrown Garden and the ruins form optional branches. Six obtainable objects start in rooms; two more are reserved quest rewards. The fountain and chest are fixed scenery.
+The world has nine rooms, eight NPCs, ten unique objects and two quests. Its main circuit is Village Square → Central Market → Tavern → Dark Alley → Village Square. Another circuit connects the tavern, cellar, sewers and alley. The garden and ruins are optional branches. Some return paths use a different direction: the square's west exit leads to the alley, whose south exit returns to the square.
 
-`data/world.json` is the runtime source of truth. `Project/data/world.yaml`
-is the original nopons design snapshot; the server does not load YAML. Edit
-JSON for future world changes. All English names and descriptions from nopons
-are preserved. The old two-room French world is a regression fixture in
-`internal/server/testdata/two_rooms.json`.
+NPCs have three roles: dialogue characters around the village, quest givers in the garden and at Ruins Gate, and enemies in the sewers and ruins. Six obtainable objects start in rooms: an apple, ale, sword, healing salve, shield and herbs. The fountain and chest are fixed scenery. The Captain's Shield and Vigor Potion start in reserve, hidden and unavailable until awarded; afterwards they can be carried, dropped and displayed like other inventory items.
 
-On the square, `TALK npc.guard` and `TALK Village Guard` are equivalent.
-Visit the market with `MOVE east`, then try `TAKE Fresh Apple`, `INVENTORY`
-and `DROP item.apple`. The sword is in the dark alley, the herbalist and
-herbs in the garden, and the rat in the sewers. Targets must be in the
-current room; full names are case-insensitive, IDs exact. Dialogue is private.
-With TALKJSON, ordered dialogue lines are joined with a newline inside the JSON string;
-JSON escapes it as `\n`, keeping each response on one TCP line. Standard TALK
-joins the dialogue onto one text line.
+Each object has one location: a room, an inventory, the reserve or a consumed state. TAKE/DROP transfers it without creating copies. Equipment bonuses apply automatically while carried; only the strongest bonus for each stat applies.
 
-World fields:
-
-- `metadata`: name and version; `start`: connection room; `respawn`: defeat destination, defaulting to `start`. Both rooms must exist.
-- `locations`: map of room IDs with name, description, exits and `items`/`npcs`
-  arrays containing unique instance IDs. NPC spawn counts are represented by
-  explicit IDs, one placed instance per NPC.
-- `items` and `npcs`: catalogues as arrays of entries with an explicit `id`.
-  Roles are `dialogue`, `quest_giver` and `enemy`.
-- NPC `dialogue`: nonempty text or a nonempty ordered list of nonblank texts.
-- Item `initial_location: {"kind":"reserve"}`: off-map reward instance.
-  The Captain's Shield and Vigor Potion start in reserve and cannot be taken,
-  dropped or displayed in `LOOK`/`INVENTORY`. Every other item must be placed
-  in exactly one room; a reserved item cannot also be placed in a room.
-- Item attributes (type, description, healing, damage and defense), NPC
-  combat attributes, and `quests` definitions are preserved for the
-  implemented combat, healing and quest engines.
-
-The loader rejects invalid IDs, names, roles, dialogues, references,
-duplicate instances and conflicting or missing placements. Room exits may
-be directed: the square’s `west` exit leads to the dark alley, whose `south`
-exit returns to the square. All nine rooms are reachable from the square.
-`LOOK DETAILS` and `INVENTORY DETAILS` return item descriptors with ID, name,
-description, type, healing, attack/defense bonuses and usage instructions;
-NPC descriptors retain `{id,name,role}`. `INFO <item ID or full name>` returns
-the same item information for an owned item or one on the ground in your room,
-including during combat. Equipment bonuses apply automatically while carried;
-only the strongest bonus for each stat applies. The GUI offers USE for healing
-consumables and INFO for other inventory items. Healing Salve restores 25 HP;
-the bandit bounty grants Captain's Shield with 8 defense. The 4,096-byte wire
-limit, including final LF, is unchanged; standard LOOK/INVENTORY still return IDs.
-
-Each physical object has one location: a room, a player's inventory or the
-reserve, or a terminal consumed state. `TAKE`/`DROP` transfer it atomically; everyone in the room receives
-an item event after the actor's reply. Non-obtainable scenery stays in its
-room. Disconnect drops carried items in the current room; restart restores
-the initial world. Consumed instances stay unavailable until restart, including after disconnect.
-World-wide reward claims also survive disconnect and reconnect.
-
-Use a different JSON world with `make run-server WORLD_FILE=path/to/world.json`.
-
-Open a second `nc` session with `CONNECT bob` to see presence events. `QUIT`
-closes only that client connection; the server keeps accepting clients until
-you stop `make run-server` with Ctrl+C.
-
-Run all automated tests with the race detector:
-
-```sh
-make test
-```
-
-`make build-server` writes an executable to `.build/tap-server`.
-
-See the [world design](docs/Commun/gdd/05_world_design.md).
+The active data is [data/world.json](data/world.json). [Project/data/world.yaml](Project/data/world.yaml) preserves the design reference originally created by nopons; the server loads JSON only. World maintenance now belongs to allasser. See the [world design](docs/Commun/gdd/05_world_design.md) for the map and content details.
 
 ## Combat System
 
-ATTACK accepts a living local hostile NPC ID or full name. One player engages
-one enemy; a second attacker receives target_busy. Each ATTACK is one turn:
-player damage **12 + strongest carried weapon bonus**, then a surviving enemy
-counterattacks for **max(1, attack_power - strongest armor bonus)**. Bonuses do
-not stack. Deterministic damage makes balancing and outcomes reproducible.
-DEFEND halves the counterattack, rounded down. FLEE [direction] succeeds 70%
-of the time; without a direction it selects the first sorted exit. Failed
-fleeing costs a counterattack. MOVE/TAKE/DROP/TALK/USE/QUEST require leaving combat.
-Read commands (including QUESTINFO/QUESTS), chat and groups stay usable. STATUS reflects actual HP and target.
+Players start with 100 HP. The sewer rat has 20 HP and 6 attack power; the bandit leader has 70 HP and 20 attack power. One player can engage a given enemy at a time.
 
-At zero HP, the player respawns in world.respawn with **30 HP**, keeps inventory
-and leaves combat. Disconnect/flee releases the enemy without resetting its HP.
-A defeated enemy disappears until restart; the finishing player's victory is
-recorded for quests. The single engagement prevents duplicated turns and kills.
+Each `ATTACK` advances one turn. The player acts first and deals **12 + strongest carried weapon bonus** damage. If the enemy survives, it counters for **max(1, enemy attack power − strongest carried armor bonus)**. Fixed damage keeps the rules easy to understand and test; equipment bonuses do not stack.
 
-The player always acts first; each command advances one turn. Fixed damage and strongest-only equipment bonuses keep outcomes reproducible and avoid stacking bonuses. FLEE adds a documented chance of failure, while DEFEND gives a defensive turn. All combat results are logged and broadcast to players in the affected room. See the [combat design](docs/Commun/gdd/03_systeme_combat.md).
+`DEFEND` spends a turn taking half the counterattack damage, rounded down. `FLEE [direction]` succeeds with a 70% chance; failure costs a counterattack. Without a direction, it selects the first exit in sorted order. Movement, item transfers, healing, dialogue and quest acceptance are blocked during combat; read commands, chat and groups remain available.
+
+At zero HP, the player respawns on Village Square with 30 HP and keeps their inventory. Fleeing or disconnecting releases the enemy without resetting its HP. Defeated enemies disappear until server restart. Results are logged and broadcast to players in the affected room, and `STATUS` shows current HP and combat state.
+
+See the [combat design](docs/Commun/gdd/03_systeme_combat.md).
 
 ## Quest System
 
-The two quest types are fetch-and-deliver (Rare Herbs for the herbalist) and defeat-and-report (the Bandit Leader bounty for the captain). Completion checks actual item ownership or a recorded personal victory rather than trusting client declarations. World-wide unique rewards preserve the item-instance model and prevent repeated reward allocation.
+The herbalist's quest requires collecting Rare Herbs and delivering them in the garden. Completion consumes the herbs, restores the player's health to 100 HP and awards the Vigor Potion. The captain's bounty requires defeating the Bandit Leader, landing the final blow, then reporting back at Ruins Gate for the Captain's Shield.
 
-TALK at a giver accepts its quest or completes it if the objective is already
-met. QUESTINFO/QUESTS DETAILS report NOT_STARTED, IN_PROGRESS, OBJECTIVES_MET, COMPLETED or
-UNAVAILABLE. Dropping an ingredient makes its objective incomplete again.
-The bandit requires a recorded final blow followed by a report to the captain.
-A pre-acceptance victory also counts. All unique rewards remain world-wide;
-acceptance/victory proof survives reconnect by username, but not server restart.
-CONNECT has no password, so usernames are not secure persistent identities.
+`QUEST <NPC ID or full name>` accepts a quest; `QUESTS` lists accepted quests and their progress. Talking to the giver also accepts or completes it when the objective is met. Completion checks actual item ownership or a recorded personal victory. Dropping the herbs makes the delivery objective incomplete again; a victory before accepting the bounty still counts.
 
-QUEST <local-npc-ID-or-name> accepts a quest and returns quest_id, description,
-reward item ID and status (available on first acceptance, active on repeats).
-QUESTS lists only the player's active/completed quests, with progress 0/1 or
-1/1 while active. A started quest becomes unavailable if another player claims
-its unique reward. TALK at the giver still accepts or completes quests for the
-existing gameplay flow. QUESTINFO <quest-id> and QUESTS DETAILS expose read-only
-definitions and the internal states listed above.
+Each reward can be claimed once for the whole server lifetime. Other players cannot receive another copy. Quest acceptance and victory records survive reconnect by username, but usernames have no password and are not secure identities. Restart clears progress and restores the world. A full inventory blocks a reward unless delivery frees a slot; the player can drop an item and retry.
 
-### Consumables and delivery rewards
-
-`USE <item_id or full display name>` consumes an owned consumable and restores
-its configured `heal_value`, capped at 100 HP. Apple restores 10, ale 15,
-potion 100. Example: `OK used=item.apple hp=85/100`. At full HP, `ERR 409 HEALTH_FULL`
-keeps the object. Unknown/unowned items return `ERR 404 ITEM_NOT_IN_INVENTORY`; weapons,
-scenery, tools and quest ingredients cannot be consumed (`ERR 405 ITEM_NOT_USABLE`).
-Names and whitespace rules match TAKE/DROP. Healing is atomic with consumption.
-
-Try the delivery from the square:
-
-```text
-CONNECT aris
-MOVE north
-TAKE item.rare_herbs
-TALK npc.herbalist
-INVENTORY
-STATUS
-USE item.vigor_potion
-```
-
-TALK consumes the herbs, transfers the unique potion from reserve and restores
-HP to 100. The final USE therefore reports full health and keeps the potion.
-Combat provides ordinary ways to lose HP; tests also exercise USE with
-injured players. No client command sets arbitrary HP or grants rewards.
-
-The first eligible delivery wins globally for this server lifetime. TALK accepts the quest; if ownership already proves the objective, the same
-TALK completes the delivery. Repeating TALK as the winning username produces an
-already-complete private dialogue without another reward. Other players
-receive `ERR 406 NO_QUEST_AVAILABLE` once the reward has been awarded. The herbs
-stay consumed and do not respawn; players can share unconsumed objects via
-DROP/TAKE. A reward may be transferred, dropped or used, but never allocated
-a second time. No player-specific copies are created. Restart resets both
-claims and placements; there is no disk persistence yet.
-
-`EVT ROOM ITEM USE`, `DELIVER`, and `REWARD` carry `<username> <item_id>`.
-Recipients include the actor; the actor's OK is queued first, then DELIVER,
-then REWARD for a successful delivery. Clients refresh inventory/status after
-these events. Failed or repeated actions emit no item events. A full outgoing
-queue or oversized dialogue cannot consume ingredients or allocate rewards.
-The bandit bounty requires a real recorded victory; TALK to its captain then
-grants the Captain's Shield. Victories and quest acceptance survive reconnect by username.
+`USE <item ID or full name>` consumes an owned healing item outside combat, capped at 100 HP. At full health, it leaves the item untouched. Consumed items stay unavailable until restart.
 
 See the [quest design](docs/Commun/gdd/04_systeme_quetes.md).
 
 ## Group Management
 
-GROUP CREATE returns OK group=<generated-id>. GROUP INVITE username notifies
-the invitee with EVT GROUP INVITE <leader>; GROUP JOIN <leader-username> joins
-that leader's group and returns OK group=<id>. GROUP LEAVE returns OK. JOIN
-and LEAVE events update members; disconnect leaves the group. If its leader
-leaves, the first remaining username in sorted order becomes leader and an
-extension EVT GROUP LEADER announces it. Empty groups are deleted. Invitations
-are informational: the RFC does not require invitation-only membership.
-GROUP INVITE/JOIN player names are converted to lowercase before lookup;
-aris, ARIS and ArIs therefore target the same player in the CLI and GUI.
+Use `GROUP CREATE`, `GROUP INVITE bob`, `GROUP JOIN alice` and `GROUP LEAVE`. JOIN targets the leader's username. Invitations notify players but are not required to join. Group chat works across rooms. When a leader leaves, the first remaining username in sorted order becomes leader; empty groups are removed.
 
-The GUI's **GROUP (5)** dialog shows separate flows for creating a group,
-inviting players and joining. Received invitations display an **Accept invitation**
-button; joining by leader username remains available. Group members and the
-current leader are refreshed through the authenticated `GROUP STATUS` extension,
-which returns `OK {"id":"group.1","leader":"alice","members":["alice","bob"]}`
-with sorted members, or `OK {"id":"","leader":"","members":[]}` when ungrouped.
+The GUI group dialog provides creation, invitation and join controls, including an acceptance button for received invitations.
 
 ## Server Logging
 
-Structured JSON logs include timestamp, level, connections, commands/parameters,
-all written replies/events and error codes, state changes, NPC interactions,
-combat and quest progress. Use `.build/tap-server -log-file server.log` to append
-to a file instead of stdout. Command flooding is limited to a 128-command burst
-with 20/s refill, then rate_limited and disconnect. More than five connections
-from an IP in two seconds produces a warning; shared school IPs are not banned.
-IP tracking is bounded. Per-client queues and write deadlines prevent an idle
-receiver from blocking other sessions. SIGINT/SIGTERM stop the server cleanly.
+The server writes structured JSON logs to stdout by default. Logs include precise timestamps, INFO/WARN/ERROR levels, connection and disconnection IP addresses, received commands and parameters, written replies/events and error codes, item movements, NPC interactions, combat and quest progress.
 
-Logs use INFO for normal activity, WARN for rejected requests and abuse patterns, and ERROR for failures. The server logs written frames from the writer goroutine rather than performing socket writes inside state handlers. Inspect the terminal output or the selected log file; rapid-connection and command-flood records identify suspicious activity. See the [logging documentation](docs/Dev_A/logging/server_logging.md).
+To append logs to a file:
+
+```sh
+make build-server
+.build/tap-server -log-file server.log
+```
+
+Inspect the terminal or log file for normal activity and warnings. `ABUSE_FLOOD` identifies command flooding: clients have a burst allowance of 128 commands, refilled at 20 per second, and are disconnected when it is exhausted. More than five connections from an IP in two seconds triggers a warning; shared school IPs are not automatically banned.
+
+Connection tracking is bounded, and written frames are logged by the writer goroutine outside game-state handlers. See the [logging documentation](docs/Dev_A/logging/server_logging.md) for event fields and monitoring details.
 
 ## Group Contributions
 
-The project is organized into three areas:
+The current division of work is:
 
-| Member | Current responsibility |
+| Member | Responsibilities |
 |---|---|
-| arvella (Dev A) | TCP server, sessions, RFC parsing and routing, replies and events, social commands, concurrency, logging and abuse detection |
-| nopons (Dev B) | GUI, TCP integration, asynchronous updates, gameplay views and controls, chat and player counters |
-| allasser (Dev C) | Game engine, world data and validation, exploration, items, NPCs, combat, quests, rewards and CLI |
+| **arvella (Dev A)** | TCP server and sessions; RFC parsing, routing, replies and events; CONNECT/CHAT/WHO/GROUP/QUIT; network concurrency, disconnects, logging and abuse detection; network tests and documentation |
+| **nopons (Dev B)** | Wails/Svelte GUI and TCP integration; asynchronous updates, room and inventory views, gameplay controls, chat, groups and player counters; GUI tests and documentation |
+| **allasser (Dev C)** | Game engine and world data; exploration, unique items, NPCs, combat, quests and rewards; CLI and asynchronous terminal input; gameplay/CLI tests and documentation |
 
-arvella handles transport and protocol compliance; allasser handles game rules and
-state mutations. They jointly define synchronization and the result/event
-contract. nopons renders server data and sends actions through the GUI.
-Each member owns tests and documentation for their area. Gameplay design,
-build tooling, integration, interoperability and peer review are shared.
+arvella and allasser share the server engine: arvella owns the network layer, the dispatcher and the event contract, allasser owns the terminal client, the world data and the gameplay rules (items, NPCs, rewards, combat, quests). All three contribute to gameplay decisions, local build tooling, integration tests and peer review.
 
-See the [team organization](docs/Commun/TAP_taches_communes.md) and
-[individual responsibility documents](docs/README.md).
+See the [team task breakdown](docs/Commun/TAP_taches_communes.md) and [individual task documents](docs/README.md).
 
 ## Testing
 
 ```sh
 make test
 make lint
-make build-server build-cli
 ```
 
-`make test` provisions local Go, Node and C tools as needed, runs the server/CLI
-and GUI TCP backend tests with the race detector, checks frontend protocol
-handlers and builds Svelte. Go tests always run again (no result cache), with
-a two-minute timeout per package. On Linux, CLI tests also exercise a real
-pseudo-terminal, including remote disconnect, input, SIGTERM and restoration.
-No graphical session or GTK/WebKit installation is needed for these checks.
+`make test` runs server, CLI and GUI TCP backend tests with the race detector, frontend protocol/map checks and a Svelte build. Linux CLI tests use a real pseudo-terminal to check asynchronous input, disconnects and terminal restoration. These checks do not need a graphical session. `make lint` checks Go formatting and vet results, JavaScript syntax and Svelte compiler warnings.
 
-`make lint` checks Go formatting without modifying files, runs `go vet` on the
-server/CLI and GUI TCP backend, checks JavaScript syntax and rejects Svelte
-compiler warnings. Generated Wails JavaScript is excluded. Use `V=1` for full
-command output; failures otherwise display the log location in `.build/logs/`.
-
-Tests cover complete bounty/delivery runs, quest status/reconnect, group chat
-isolation across rooms, concurrent enemy/group/reward contention, defend/flee,
-respawn, transactional failures, UTF-8/line bounds, logs/abuse detection and CLI
-async input/cancellation. A real CLI-to-server test completes the bounty and
-receives the Captain's Shield. See docs/Commun/testing/aris_acceptance.md for the test matrix.
+Tests cover concurrent item and reward claims, combat and respawn, complete delivery/bounty quests, reconnects, groups, protocol errors and logging. The [acceptance matrix](docs/Commun/testing/aris_acceptance.md) describes the scenarios.
 
 ### Manual multiplayer checks
 
-1. Start `make run-server`, then `make run-client` and `make run-client-gui GUI_SERVER=off` in two other terminals. In the CLI, enter `CONNECT alice`; in the GUI, connect as `bob`. Check room and server counters and presence notifications.
-2. Send `CHAT GLOBAL Hello`, move one player to another room, and verify room chat isolation. Create a group and check group chat across rooms.
-3. Move both players to the market. Let one use `TAKE Fresh Apple`, confirm the object disappears for both players, then DROP it and let the other player take it.
-4. Complete the herbalist delivery and the bandit bounty. Inspect QUESTS and INVENTORY, then verify that repeating completion never duplicates rewards.
-5. Fight the rat or bandit, try DEFEND/FLEE, and verify STATUS. Trigger defeat and confirm respawn on the square at 30 HP.
-6. Close one client abruptly. Confirm that the other remains responsive, counters update and carried items return to the room. Inspect the server logs for commands, errors, combat and quest events.
+Start a fresh server and connect a CLI as `alice` and a GUI as `bob`, using the separate launch commands above.
 
-Automated tests do not replace a visual GUI session, installation on a clean machine, or interoperability checks with another team. The [acceptance matrix](docs/Commun/testing/aris_acceptance.md) documents additional scenarios.
+1. Check presence notifications and room/server counters. Send `CHAT GLOBAL Hello`, then move one player away and check that ROOM chat stays local.
+2. Create a group as alice, join it as bob, and send `CHAT GROUP Hello` from different rooms.
+3. Move both players east to the market. Have one take `Fresh Apple`; check that it disappears for both. Drop it and let the other player take it.
+4. From the square, run the delivery and bounty sequences below. Check QUESTS, HP and inventory in both clients; repeat TALK to verify that rewards are not duplicated.
+5. Fight an enemy, try DEFEND/FLEE and inspect STATUS. For a defeat check, use a fresh world and attack the bandit repeatedly without equipment; confirm respawn on the square at 30 HP.
+6. Close a client abruptly. Check that the other stays responsive, counters update and carried items return to the room. Inspect logs for commands, errors, combat and quest events.
+
+Herbalist delivery, starting on Village Square:
+
+```text
+MOVE north
+QUEST npc.herbalist
+TAKE item.rare_herbs
+TALK npc.herbalist
+QUESTS
+INVENTORY
+STATUS
+MOVE south
+```
+
+Bandit bounty, starting on Village Square at full health:
+
+```text
+MOVE west
+TAKE item.rusty_sword
+MOVE south
+MOVE east
+MOVE east
+TAKE item.wooden_shield
+QUEST npc.guard_captain
+MOVE north
+ATTACK npc.bandit_leader
+ATTACK npc.bandit_leader
+ATTACK npc.bandit_leader
+ATTACK npc.bandit_leader
+MOVE south
+TALK npc.guard_captain
+QUESTS
+INVENTORY
+```
+
+These sequences assume the items and rewards have not been claimed. Restart the server before repeating them. A visual GUI session, installation on a clean machine and interoperability with another team's client/server remain separate manual checks.
 
 ## Resources
 
-- [RFC 42TAP](docs/Commun/protocol/external_rfc.html): commands, replies, events and transport requirements.
-- [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119): interpretation of protocol requirement keywords.
-- [RFC 5234](https://www.rfc-editor.org/rfc/rfc5234): ABNF syntax.
+- [RFC 42TAP](docs/Commun/protocol/external_rfc.html): commands, replies, events and transport.
+- [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) and [RFC 5234](https://www.rfc-editor.org/rfc/rfc5234): requirement keywords and ABNF syntax.
 - [Go documentation](https://go.dev/doc/) and [net package](https://pkg.go.dev/net): language and TCP networking.
-- [Go race detector](https://go.dev/doc/articles/race_detector): concurrent-state verification.
-- [log/slog documentation](https://pkg.go.dev/log/slog): structured logging.
-- [Wails documentation](https://wails.io/docs/introduction): desktop Go/web integration.
-- [Svelte documentation](https://svelte.dev/docs): reactive GUI components.
-- [Project documentation index](docs/README.md): architecture, gameplay design and client guides.
+- [Go race detector](https://go.dev/doc/articles/race_detector): concurrency checks.
+- [log/slog](https://pkg.go.dev/log/slog): structured logging.
+- [Wails documentation](https://wails.io/docs/introduction) and [Svelte documentation](https://svelte.dev/docs): desktop integration and interface components.
+- [Project documentation](docs/README.md): architecture, design and client guides.
 
 ### AI usage
 
-For this revision, AI assistance was used to compare the subject and RFC with the existing code and documentation, run and interpret repository checks, restructure this README, and update client launch commands in the Makefile, server startup output, launcher and related guides. These checks are assistance for contributor review; they do not establish independent cross-team interoperability or replace the team's understanding of the implementation. Contributors remain responsible for reviewing generated changes, explaining the code and validating it with peers.
+AI assisted with code and documentation reviews against the subject and RFC, running and interpreting repository checks, and editing the README and team task breakdown. It also helped modify the Makefile, server startup messages, client launcher and related guides. The team remains responsible for reviewing the changes and validating the project.
