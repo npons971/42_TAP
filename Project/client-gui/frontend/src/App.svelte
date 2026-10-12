@@ -13,6 +13,7 @@
   let host = "127.0.0.1";
   let port = 4242;
   let username = "";
+  let serverExtensions = new Set();
 
   // Player & Game State
   let playerHP = 100;
@@ -117,6 +118,7 @@
   function resetSession() {
     connected = false;
     connecting = false;
+    serverExtensions = new Set();
     currentRoom = emptyRoom();
     roomNames = {};
     selectedEntity = '';
@@ -160,6 +162,10 @@
         if (kind === "OK") handleServerOK(payload, command, request); else handleServerERR(payload, command, request);
       }),
       window.runtime.EventsOn("server_evt", (payload) => handleServerEVT(payload)),
+      window.runtime.EventsOn("server_capabilities", (payload) => {
+        serverExtensions = new Set(Object.entries(JSON.parse(payload)).filter(([, supported]) => supported === true).map(([name]) => name));
+        if (serverExtensions.size) scheduleRefresh("Look", "Inventory", "Quests");
+      }),
       window.runtime.EventsOn("disconnected", (msg) => {
         const wasConnecting = connecting;
         resetSession();
@@ -543,7 +549,12 @@
   const callQuests = () => invoke("Quests");
   const callWho = () => invoke("Who");
   const callUse = id => invoke("SendCommand", "USE " + id);
-  const callInfo = id => invoke("SendCommand", "INFO " + id);
+  const callInfo = id => {
+    if (serverExtensions.has("INFO")) return invoke("SendCommand", "INFO " + id);
+    const item = [...inventory, ...currentRoom.items].find(item => item.id === id);
+    if (item) showItemInfo({...item, usage: item.usage || 'This server does not provide detailed item information.'});
+    return Promise.resolve(Boolean(item));
+  };
   const callDefend = () => invoke("SendCommand", "DEFEND");
   const callFlee = () => invoke("SendCommand", "FLEE");
   function callGroup(action, target = "") {
@@ -563,6 +574,7 @@
     });
   }
   function refreshGroup() {
+    if (!serverExtensions.has("GROUP STATUS")) return Promise.resolve(false);
     return invokeBackend("SendCommand", ["GROUP STATUS"], false);
   }
   function openGroup() {

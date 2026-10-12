@@ -276,6 +276,29 @@ func TestRFCConnectionLimitTCP(t *testing.T) {
 	sendCommand(t, firstConn, "WHO")
 	rfcError(t, first, "ERR 403 NOT_AUTHENTICATED ")
 }
+
+func TestCapabilitiesDiscoveryTCP(t *testing.T) {
+	addr, cancel, done := startTestServer(t)
+	defer func() { cancel(); <-done }()
+	conn, r := dialTestClient(t, addr)
+	sendCommand(t, conn, "CAPABILITIES")
+	rfcError(t, r, "ERR 403 NOT_AUTHENTICATED ")
+	sendCommand(t, conn, "CONNECT alice")
+	rfcLine(t, r, "OK connected")
+	rfcLine(t, r, "EVT STATS players=1")
+	sendCommand(t, conn, "CAPABILITIES extra")
+	rfcError(t, r, "ERR 400 INVALID_ARGUMENTS ")
+	sendCommand(t, conn, "CAPABILITIES")
+	var capabilities struct {
+		Extensions []string `json:"extensions"`
+	}
+	rfcJSON(t, r, &capabilities)
+	if strings.Join(capabilities.Extensions, ",") != "LOOK DETAILS,INVENTORY DETAILS,QUESTS DETAILS,TALKJSON,INFO,GROUP STATUS" {
+		t.Fatalf("unexpected extensions: %v", capabilities.Extensions)
+	}
+	sendCommand(t, conn, "WHO")
+	rfcLine(t, r, "OK players=1")
+}
 func TestInventoryAndRewardCapacity(t *testing.T) {
 	for _, fetch := range []bool{false, true} {
 		t.Run(fmt.Sprint("fetch=", fetch), func(t *testing.T) {

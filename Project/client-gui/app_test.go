@@ -134,6 +134,9 @@ func TestAppLiveServerIntegration(t *testing.T) {
 	if payload != "connected" {
 		t.Fatalf("Expected 'connected' payload, got %q", payload)
 	}
+	waitForEvent(t, eventsChan, 2*time.Second, func(et, pl string) bool {
+		return et == "server_capabilities"
+	})
 
 	// 2. Initial LOOK
 	if err := app.Look(); err != nil {
@@ -372,9 +375,9 @@ func TestGUIProtocolCommandsAndDisconnect(t *testing.T) {
 		action func() error
 		want   string
 	}{
-		{nil, "CONNECT élise"}, {app.Look, "LOOK DETAILS"}, {app.Inventory, "INVENTORY DETAILS"},
-		{func() error { return app.Talk("Village Guard") }, "TALKJSON Village Guard"},
-		{app.Who, "WHO"}, {app.Quests, "QUESTS DETAILS"}, {func() error { return app.Quest("npc.herbalist") }, "QUEST npc.herbalist"},
+		{nil, "CONNECT élise"}, {nil, "CAPABILITIES"}, {app.Look, "LOOK"}, {app.Inventory, "INVENTORY"},
+		{func() error { return app.Talk("Village Guard") }, "TALK Village Guard"},
+		{app.Who, "WHO"}, {app.Quests, "QUESTS"}, {func() error { return app.Quest("npc.herbalist") }, "QUEST npc.herbalist"},
 		{func() error { return app.Group("CREATE", "") }, "GROUP CREATE"},
 		{func() error { return app.Group(" invite ", " BoB ") }, "GROUP INVITE bob"},
 		{func() error { return app.Group("JOIN", " BOB ") }, "GROUP JOIN bob"},
@@ -471,6 +474,143 @@ func TestGUIConcurrentConnect(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("connection leaked")
+	}
+}
+
+func TestGUICapabilitiesAndReconnect(t *testing.T) {
+	app := NewApp()
+	capabilities := make(chan string, 1)
+	replies := make(chan struct{}, 16)
+	var errorsSeen atomic.Int32
+	app.OnEvent = func(kind, payload string) {
+		if kind == "server_capabilities" {
+			capabilities <- payload
+		}
+		if kind == "server_err" {
+			errorsSeen.Add(1)
+		}
+		if kind == "server_ok" && payload == "" {
+			replies <- struct{}{}
+		}
+	}
+	for _, tc := range []struct {
+		name, reply string
+		extended    bool
+	}{
+		{"supported", `OK {"extensions":["LOOK DETAILS","INVENTORY DETAILS","QUESTS DETAILS","TALKJSON"]}`, true},
+		{"other rejection text", "ERR 400 BAD_REQUEST", false},
+		{"different rejection code", "ERR 501 NOT_IMPLEMENTED", false},
+		{"malformed JSON", `OK {"extensions":["LOOK DETAILS",42]}`, false},
+		{"unrecognized OK", "OK", false},
+		{"supported again", `OK {"extensions":["LOOK DETAILS","INVENTORY DETAILS","QUESTS DETAILS","TALKJSON"]}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			commands := make(chan string, 16)
+			done := make(chan struct{})
+			releaseProbe := make(chan struct{})
+			defer close(releaseProbe)
+			go func() {
+				defer close(done)
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				fmt.Fprintln(conn, "OK hello proto=1")
+				r := bufio.NewScanner(conn)
+				for r.Scan() {
+					line := r.Text()
+					commands <- line
+					switch {
+					case strings.HasPrefix(line, "CONNECT "):
+						fmt.Fprintln(conn, "OK connected")
+					case line == "CAPABILITIES":
+						<-releaseProbe
+						fmt.Fprintln(conn, "EVT STATS players=1")
+						fmt.Fprintln(conn, tc.reply)
+					case line == "QUIT":
+						return
+					default:
+						fmt.Fprintln(conn, "OK")
+					}
+				}
+			}()
+			expectCommand := func(want string) {
+				t.Helper()
+				select {
+				case got := <-commands:
+					if got != want {
+						t.Fatalf("got command %q, want %q", got, want)
+					}
+				case <-time.After(2 * time.Second):
+					t.Fatalf("command %q not sent", want)
+				}
+			}
+			expectReply := func() {
+				t.Helper()
+				select {
+				case <-replies:
+				case <-time.After(2 * time.Second):
+					t.Fatal("standard/extended reply not received")
+				}
+			}
+			if err := app.Connect("127.0.0.1", listener.Addr().(*net.TCPAddr).Port, "alice"); err != nil {
+				t.Fatal(err)
+			}
+			defer app.Disconnect()
+			expectCommand("CONNECT alice")
+			expectCommand("CAPABILITIES")
+			// Neither a pending probe nor capabilities from the previous session
+			// may prevent the initial standard request.
+			if err := app.Look(); err != nil {
+				t.Fatal(err)
+			}
+			releaseProbe <- struct{}{}
+			expectCommand("LOOK")
+			expectReply()
+			select {
+			case <-capabilities:
+			case <-time.After(2 * time.Second):
+				t.Fatal("capability response not processed")
+			}
+			for _, step := range []struct {
+				action             func() error
+				standard, extended string
+			}{
+				{app.Look, "LOOK", "LOOK DETAILS"},
+				{app.Inventory, "INVENTORY", "INVENTORY DETAILS"},
+				{app.Quests, "QUESTS", "QUESTS DETAILS"},
+				{func() error { return app.Talk("Village Guard") }, "TALK Village Guard", "TALKJSON Village Guard"},
+				{app.Look, "LOOK", "LOOK DETAILS"},
+			} {
+				if err := step.action(); err != nil {
+					t.Fatal(err)
+				}
+				want := step.standard
+				if tc.extended {
+					want = step.extended
+				}
+				expectCommand(want)
+				expectReply()
+			}
+			if err := app.Disconnect(); err != nil {
+				t.Fatal(err)
+			}
+			expectCommand("QUIT")
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Fatal("peer did not stop")
+			}
+		})
+	}
+	if errorsSeen.Load() != 0 {
+		t.Fatal("optional capability rejection surfaced as a gameplay error")
 	}
 }
 

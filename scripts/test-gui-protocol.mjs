@@ -44,6 +44,7 @@ const expectRefresh = async (expected, label) => {
 };
 
 run('connected = true');
+eventHandlers.get('server_capabilities')(JSON.stringify({'INFO':true, 'GROUP STATUS':true}));
 const initialRoom = run('currentRoom.id');
 run(`handleServerOK('players=3', 'WHO')`);
 assert.equal(run('serverPlayersCount'), 3);
@@ -334,6 +335,8 @@ const expectChannel = (expected, label) => {
 };
 
 // Exercise real event subscriptions for every standard event and project extension.
+eventHandlers.get('server_capabilities')(JSON.stringify({'INFO':true, 'GROUP STATUS':true}));
+await flushTimers();
 const eventCases = [
   ...['GLOBAL', 'ROOM', 'GROUP'].map(scope => [`${scope} CHAT élise Hello  everyone!`, scope.toLowerCase(), []]),
   ...['INVITE', 'JOIN', 'LEAVE', 'LEADER'].map(action => [`GROUP ${action} alice`, 'group', action === 'INVITE' ? [] : ['SendCommand']]),
@@ -464,6 +467,8 @@ expectChannel(null, 'disconnect');
 
 // Group invitations and membership use confirmed replies, never command dispatch alone.
 run(`resetSession(); connected = true; username = 'bob'; handleServerEVT('GROUP INVITE alice'); handleServerEVT('GROUP INVITE alice')`);
+eventHandlers.get('server_capabilities')(JSON.stringify({'INFO':true, 'GROUP STATUS':true}));
+await flushTimers();
 assert.equal(run('groupInvitations.length'), 1, 'duplicate invitations are coalesced');
 assert.equal(run('showGroupModal'), false, 'invitations do not interrupt play');
 resetCalls();
@@ -508,5 +513,26 @@ await run(`callGroup('INVITE', 'alice bob')`);
 assert.equal(sent.filter(({method}) => method === 'Group').length, 0, 'invalid usernames stay out of protocol commands');
 assert.match(source, /<span>GROUP/);
 assert.doesNotMatch(source, /Create party|Join party|Leave party|<h3>Party/);
+
+// Optional metadata actions stay local until this connection advertises them.
+run(`resetSession(); connected = true; handleServerOK('["item.legacy"]', 'INVENTORY')`);
+resetCalls();
+await run(`callInfo('item.legacy'); refreshGroup()`);
+assert.equal(sent.length, 0, 'standard-only servers receive neither INFO nor GROUP STATUS');
+assert.equal(run('activeItemInfo.id'), 'item.legacy', 'standard item IDs still have an information view');
+eventHandlers.get('server_capabilities')('{}');
+await flushTimers();
+assert.equal(sent.length, 0, 'a rejected capability probe does not trigger retries');
+assert.equal(run('actionError'), '', 'optional discovery does not create a gameplay error');
+eventHandlers.get('server_capabilities')(JSON.stringify({'INFO':true, 'GROUP STATUS':true}));
+await expectRefresh(['Look', 'Inventory', 'Quests'], 'confirmed metadata capabilities');
+resetCalls();
+await run(`callInfo('item.legacy'); refreshGroup()`);
+assert.deepEqual(sent.filter(({method}) => method === 'SendCommand').map(({args}) => args[0]), ['INFO item.legacy', 'GROUP STATUS']);
+run(`resetSession(); connected = true`);
+resetCalls();
+await run('refreshGroup()');
+assert.equal(run('serverExtensions.size'), 0, 'capabilities never leak into another server connection');
+assert.equal(sent.length, 0);
 
 console.log('GUI protocol: replies, all standard/extension events, error routing, refreshes, fallback, combat, groups, quests, Unicode validation, connection setup, network errors, logs, hotkeys, map selection and session reset passed.');

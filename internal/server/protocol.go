@@ -34,6 +34,19 @@ func validDetailsArgs(args []string) bool {
 	return len(args) == 1 || len(args) == 2 && strings.EqualFold(args[1], "DETAILS")
 }
 
+// Optional discovery; standard RFC commands and greeting remain unchanged.
+func (s *Server) capabilities(c *client, args []string) bool {
+	if len(args) != 1 {
+		return sendError(c, "invalid_arguments", "CAPABILITIES takes no arguments")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if c.username == "" {
+		return notAuthenticated(c, "CAPABILITIES")
+	}
+	return queue(c.outbox, `OK {"extensions":["LOOK DETAILS","INVENTORY DETAILS","QUESTS DETAILS","TALKJSON","INFO","GROUP STATUS"]}`)
+}
+
 // Caller holds mu; updates follow the command reply and presence events.
 func (s *Server) broadcastStatsLocked() {
 	event := fmt.Sprintf("EVT STATS players=%d", len(s.players))

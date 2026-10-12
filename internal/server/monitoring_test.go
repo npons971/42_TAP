@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,6 +11,101 @@ import (
 	"testing"
 	"time"
 )
+
+func TestRejectedConnectionsAreLoggedTCP(t *testing.T) {
+	world, err := LoadWorld("../../data/world.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	s := New(slog.New(slog.NewJSONHandler(&logs, nil)), world)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Serve(ctx, listener) }()
+	defer cancel()
+	for i := 0; i < maxConnections; i++ {
+		dialTestClient(t, listener.Addr().String())
+	}
+	// Isolate abuse monitoring for the rejected attempts from initial admission.
+	s.mu.Lock()
+	s.connectionHistory = make(map[string]connectionWindow)
+	s.mu.Unlock()
+	rejected := make(map[string]map[string]bool)
+	for i := 0; i < 6; i++ {
+		conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		_ = conn.SetDeadline(time.Now().Add(time.Second))
+		rejected[conn.LocalAddr().String()] = make(map[string]bool)
+		r := bufio.NewReader(conn)
+		rfcLine(t, r, "OK hello proto=1")
+		rfcLine(t, r, "ERR 503 CONNECTION_LIMIT Server connection limit reached")
+		if _, err := r.ReadByte(); err != io.EOF {
+			t.Fatalf("rejected connection not closed: %v", err)
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	// Inspect logs only after all session writers have stopped.
+	rapid := false
+	decoder := json.NewDecoder(&logs)
+	for decoder.More() {
+		var entry map[string]any
+		if err := decoder.Decode(&entry); err != nil {
+			t.Fatal(err)
+		}
+		if entry["event"] == "RAPID_RECONNECT" && entry["client_ip"] == "127.0.0.1" {
+			rapid = true
+		}
+		remote, _ := entry["remote_addr"].(string)
+		seen, ok := rejected[remote]
+		if !ok {
+			continue
+		}
+		if entry["time"] == nil || entry["level"] == nil {
+			t.Fatal("rejected connection audit lacks timestamp or level")
+		}
+		switch entry["msg"] {
+		case "client connected":
+			seen["connected"] = true
+		case "connection rejected":
+			if entry["error_code"] != "503" || entry["level"] != "WARN" {
+				t.Fatalf("invalid rejection audit: %v", entry)
+			}
+			seen["rejected"] = true
+		case "server response":
+			if entry["response"] == "OK hello proto=1" {
+				seen["greeting"] = true
+			}
+			if entry["response"] == "ERR 503 CONNECTION_LIMIT Server connection limit reached" && entry["error_code"] == "503" && entry["level"] == "WARN" {
+				seen["error"] = true
+			}
+		case "client disconnected":
+			if entry["reason"] != "connection_limit" || entry["duration_ms"] == nil {
+				t.Fatalf("invalid rejected disconnection audit: %v", entry)
+			}
+			seen["disconnected"] = true
+		}
+	}
+	for remote, seen := range rejected {
+		for _, event := range []string{"connected", "rejected", "greeting", "error", "disconnected"} {
+			if !seen[event] {
+				t.Errorf("connection %s lacks %s audit", remote, event)
+			}
+		}
+	}
+	if !rapid {
+		t.Fatal("rapid rejected connections were not detected")
+	}
+}
 
 func TestCommandRateLimiter(t *testing.T) {
 	var b tokenBucket

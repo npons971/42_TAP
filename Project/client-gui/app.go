@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ type App struct {
 	connected  bool
 	username   string
 	generation uint64
+	extensions map[string]bool // Confirmed for this connection, protected by connMu.
 	sessionMu  sync.Mutex
 	replyMu    sync.Mutex
 	pending    []string
@@ -136,6 +138,10 @@ func (a *App) connect(host string, port int, username string) (net.Conn, *bufio.
 		}
 		break
 	}
+	// Probe once. Until its asynchronous reply arrives, actions use RFC commands.
+	if _, err := fmt.Fprintln(conn, "CAPABILITIES"); err != nil {
+		return nil, nil, fmt.Errorf("capability discovery failed: %w", err)
+	}
 	_ = conn.SetDeadline(time.Time{})
 	a.connMu.Lock()
 	a.conn = conn
@@ -143,8 +149,9 @@ func (a *App) connect(host string, port int, username string) (net.Conn, *bufio.
 	a.connected = true
 	a.username = cleanUser
 	a.generation++
+	a.extensions = make(map[string]bool)
 	a.replyMu.Lock()
-	a.pending = nil
+	a.pending = []string{"CAPABILITIES"}
 	a.replyMu.Unlock()
 	a.connMu.Unlock()
 	success = true
@@ -202,6 +209,7 @@ func (a *App) detachConnection(conn net.Conn) (uint64, bool) {
 	a.writer = nil
 	a.connected = false
 	a.username = ""
+	a.extensions = nil
 	a.replyMu.Lock()
 	a.pending = nil
 	a.replyMu.Unlock()
@@ -259,6 +267,14 @@ func (a *App) Disconnect() error {
 
 // SendCommand sends a line-terminated command to the server.
 func (a *App) SendCommand(cmd string) error {
+	a.connMu.RLock()
+	defer a.connMu.RUnlock()
+	return a.sendCommandLocked(cmd)
+}
+
+// Caller holds connMu so validation, capability selection and writing belong
+// to the same session, even when Disconnect/Connect run concurrently.
+func (a *App) sendCommandLocked(cmd string) error {
 	cleanCmd := strings.TrimSpace(cmd)
 	if cleanCmd == "" {
 		return nil
@@ -266,13 +282,10 @@ func (a *App) SendCommand(cmd string) error {
 	if len(cleanCmd)+1 > 4096 || !utf8.ValidString(cleanCmd) || strings.ContainsAny(cleanCmd, "\r\n") {
 		return fmt.Errorf("command must be valid UTF-8 on one line of at most 4096 bytes")
 	}
-	return a.sendRaw(cleanCmd + "\n")
+	return a.sendRawLocked(cleanCmd + "\n")
 }
 
-func (a *App) sendRaw(payload string) error {
-	a.connMu.RLock()
-	defer a.connMu.RUnlock()
-
+func (a *App) sendRawLocked(payload string) error {
 	if !a.connected || a.writer == nil {
 		return fmt.Errorf("not connected to server")
 	}
@@ -305,7 +318,7 @@ func (a *App) Move(direction string) error {
 }
 
 func (a *App) Look() error {
-	return a.SendCommand("LOOK DETAILS")
+	return a.sendOptional("LOOK", "LOOK DETAILS", "")
 }
 
 func (a *App) Take(item string) error {
@@ -317,11 +330,11 @@ func (a *App) Drop(item string) error {
 }
 
 func (a *App) Inventory() error {
-	return a.SendCommand("INVENTORY DETAILS")
+	return a.sendOptional("INVENTORY", "INVENTORY DETAILS", "")
 }
 
 func (a *App) Talk(npc string) error {
-	return a.SendCommand(fmt.Sprintf("TALKJSON %s", strings.TrimSpace(npc)))
+	return a.sendOptional("TALK", "TALKJSON", npc)
 }
 
 func (a *App) Attack(target string) error {
@@ -341,7 +354,47 @@ func (a *App) Quest(npc string) error {
 }
 
 func (a *App) Quests() error {
-	return a.SendCommand("QUESTS DETAILS")
+	return a.sendOptional("QUESTS", "QUESTS DETAILS", "")
+}
+
+func (a *App) sendOptional(standard, extension, argument string) error {
+	a.connMu.RLock()
+	defer a.connMu.RUnlock()
+	command := standard
+	if a.extensions[extension] {
+		command = extension
+	}
+	if argument != "" {
+		command += " " + strings.TrimSpace(argument)
+	}
+	return a.sendCommandLocked(command)
+}
+
+func (a *App) receiveCapabilities(conn net.Conn, line string) {
+	var data struct {
+		Extensions []string `json:"extensions"`
+	}
+	if strings.HasPrefix(line, "OK ") {
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "OK ")), &data); err != nil {
+			data.Extensions = nil
+		}
+	}
+	extensions := make(map[string]bool)
+	for _, name := range data.Extensions {
+		switch name {
+		case "LOOK DETAILS", "INVENTORY DETAILS", "QUESTS DETAILS", "TALKJSON", "INFO", "GROUP STATUS":
+			extensions[name] = true
+		}
+	}
+	a.connMu.Lock()
+	if a.conn != conn {
+		a.connMu.Unlock()
+		return
+	}
+	a.extensions = extensions
+	a.connMu.Unlock()
+	payload, _ := json.Marshal(extensions)
+	a.emitFor(conn, "server_capabilities", string(payload))
 }
 
 func (a *App) Who() error {
@@ -408,6 +461,12 @@ func (a *App) listenServer(conn net.Conn, reader *bufio.Reader) {
 			continue
 		}
 		a.emitFor(conn, "raw_message", line)
+		if request == "CAPABILITIES" {
+			// Any rejection or unrecognized response means standard-only mode.
+			// Discovery failures never become gameplay errors in the interface.
+			a.receiveCapabilities(conn, line)
+			continue
+		}
 		kind, payload := "", ""
 		switch {
 		case line == "OK" || strings.HasPrefix(line, "OK "):

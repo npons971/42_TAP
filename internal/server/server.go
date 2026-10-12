@@ -129,14 +129,12 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 		}
 		c := &client{conn: conn, outbox: make(chan string, outboxSize), writerDone: make(chan struct{}), connectedAt: time.Now()}
 		s.mu.Lock()
+		s.recordConnectionLocked(conn.RemoteAddr(), c.connectedAt)
 		if len(s.clients) >= maxConnections {
 			s.mu.Unlock()
-			_ = conn.SetWriteDeadline(time.Now().Add(250 * time.Millisecond))
-			_, _ = io.WriteString(conn, "OK hello proto=1\nERR 503 CONNECTION_LIMIT Server connection limit reached\n")
-			_ = conn.Close()
+			s.rejectConnection(c)
 			continue
 		}
-		s.recordConnectionLocked(conn.RemoteAddr(), time.Now())
 		s.clients[conn] = c
 		s.wg.Add(1)
 		s.mu.Unlock()
@@ -260,6 +258,8 @@ func (s *Server) handleCommand(c *client, line string) bool {
 		return s.connect(c, args)
 	case "LOOK":
 		return s.look(c, args)
+	case "CAPABILITIES":
+		return s.capabilities(c, args)
 	case "MOVE":
 		return s.move(c, args)
 	case "WHO":
