@@ -4,9 +4,9 @@ La répartition de référence repose sur trois pôles. Chaque membre assure le 
 
 | Membre | Pôle | Responsabilités |
 |---|---|---|
-| **Aris (Dev A)** | Serveur réseau et protocole | TCP, sessions, parser RFC, réponses et événements, commandes sociales, concurrence, déconnexions, logs et détection d'abus |
-| **Novanns (Dev B)** | Client GUI | Connexion TCP, réception asynchrone, vues et actions de jeu, chats, groupes, compteurs et actualisation automatique |
-| **Alexis (Dev C)** | Moteur de jeu, monde et CLI | État du jeu, chargement et validation du monde, exploration, objets, PNJ, combat, quêtes, récompenses et client CLI |
+| **arvella — Aris (Dev A)** | Serveur réseau et protocole | TCP, sessions, parser RFC, réponses et événements, commandes sociales, concurrence, déconnexions, logs et détection d'abus |
+| **nopons — Novanns (Dev B)** | Client GUI | Connexion TCP, réception asynchrone, vues et actions de jeu, chats, groupes, compteurs et actualisation automatique |
+| **allasser — Alexis (Dev C)** | Moteur de jeu, monde et CLI | État du jeu, chargement et validation du monde, exploration, objets, PNJ, combat, quêtes, récompenses et client CLI |
 
 Fiches détaillées : [Dev A](../Dev_A/TAP_Aris_Dev_A.md), [Dev B](../Dev_B/TAP_Novanns_Dev_B.md), [Dev C](../Dev_C/TAP_Dev_C.md).
 

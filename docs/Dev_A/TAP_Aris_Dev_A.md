@@ -1,4 +1,4 @@
-# TAP — Aris (Dev A) : serveur réseau et protocole
+# TAP — arvella / Aris (Dev A) : serveur réseau et protocole
 
 Répartition de référence : [organisation à trois](../Commun/TAP_taches_communes.md). Autres pôles : [GUI — Dev B](../Dev_B/TAP_Novanns_Dev_B.md), [moteur, monde et CLI — Dev C](../Dev_C/TAP_Dev_C.md).
 
@@ -19,7 +19,7 @@ Dev C possède la logique d'exploration, d'objets, de PNJ, de combat et de quêt
 
 ## Tests
 
-Les tests réseau, de concurrence et de terminal sont décrits dans [aris_acceptance.md](../Commun/testing/aris_acceptance.md). Le [rapport de conformité RFC](../Commun/protocol/rfc_conformance.md) documente les corrections et extensions. Une session visuelle Wails et l'interopérabilité avec une autre équipe restent des validations communes.
+Les tests réseau, de concurrence et de terminal sont décrits dans [aris_acceptance.md](../Commun/testing/aris_acceptance.md). Le [rapport de conformité RFC](../Commun/protocol/rfc_conformance.md) documente les écarts et extensions. Une session visuelle Wails et l'interopérabilité avec une autre équipe restent des validations communes.
 
 ## Références
 

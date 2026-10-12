@@ -1,4 +1,4 @@
-# TAP — Novanns (Dev B) : client GUI
+# TAP — nopons / Novanns (Dev B) : client GUI
 
 Répartition de référence : [organisation à trois](../Commun/TAP_taches_communes.md). Autres pôles : [réseau et protocole — Dev A](../Dev_A/TAP_Aris_Dev_A.md), [moteur, monde et CLI — Dev C](../Dev_C/TAP_Dev_C.md).
 
@@ -20,9 +20,7 @@ Dev A fournit le contrat réseau et les événements. Dev C fournit la logique d
 
 ## Avancement
 
-Le monde comporte neuf salles, deux boucles et deux branches.
-
-Le prototype, les interactions d'objets et PNJ, les commandes sociales, le suivi des quêtes et les contrôles ATTACK/DEFEND/FLEE sont implémentés. Les tests multijoueur visuels et la validation des déconnexions/reconnexions restent à finaliser, puis la documentation et la préparation à l'évaluation.
+Le monde comporte neuf salles, deux boucles et deux branches. Le prototype, les interactions d'objets et PNJ, les commandes sociales, le suivi des quêtes et les contrôles ATTACK/DEFEND/FLEE sont implémentés. Les tests multijoueur visuels et la validation des déconnexions/reconnexions restent à finaliser, puis la documentation et la préparation à l'évaluation.
 
 ## Références
 
